@@ -50,76 +50,72 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
-from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+import nltk
+from nltk.tokenize import sent_tokenize, word_tokenize
+from gensim.models import Word2Vec
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Paths
-train_data_dir = 'dataset/'  # Change this to your dataset path
-model_save_path = 'classification_model.h5'
+# Download NLTK data for sentence and word tokenization
+nltk.download('punkt')
 
-# Image data generator with augmentation
-train_datagen = ImageDataGenerator(
-    rescale=1./255, 
-    validation_split=0.2,  # 80-20 train-validation split
-    rotation_range=20, 
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    shear_range=0.2,
-    zoom_range=0.2,
-    horizontal_flip=True
-)
+# Load text data
+def load_text(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
+    return text
 
-train_generator = train_datagen.flow_from_directory(
-    train_data_dir,
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='categorical',
-    subset='training'
-)
+# Preprocess text into sentences and tokenize
+def preprocess_text(text):
+    sentences = sent_tokenize(text)  # Tokenize into sentences
+    tokenized_sentences = [word_tokenize(sentence.lower()) for sentence in sentences]  # Tokenize words in each sentence
+    return sentences, tokenized_sentences
 
-validation_generator = train_datagen.flow_from_directory(
-    train_data_dir,
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='categorical',
-    subset='validation'
-)
+# Train or load Word2Vec model
+def train_word2vec(tokenized_sentences, vector_size=100, window=5, min_count=1):
+    model = Word2Vec(tokenized_sentences, vector_size=vector_size, window=window, min_count=min_count)
+    return model
 
-# Load pre-trained ResNet50 model (without top layers)
-base_model = ResNet50(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+# Get the sentence embedding by averaging word vectors
+def get_sentence_embedding(model, sentence_tokens):
+    word_vectors = []
+    for word in sentence_tokens:
+        if word in model.wv:
+            word_vectors.append(model.wv[word])
+    if word_vectors:
+        return np.mean(word_vectors, axis=0)
+    else:
+        return np.zeros(model.vector_size)
 
-# Adding custom layers on top of the pre-trained model
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dense(1024, activation='relu')(x)
-predictions = Dense(4, activation='softmax')(x)  # 4 categories: license, miscellaneous, passport, residence certificate
+# Find the most similar sentence to the user query
+def find_most_similar_sentence(model, sentences, tokenized_sentences, query):
+    query_tokens = word_tokenize(query.lower())
+    query_embedding = get_sentence_embedding(model, query_tokens)
 
-model = Model(inputs=base_model.input, outputs=predictions)
+    sentence_embeddings = [get_sentence_embedding(model, sent) for sent in tokenized_sentences]
+    similarities = cosine_similarity([query_embedding], sentence_embeddings)[0]
 
-# Freeze the base model layers
-for layer in base_model.layers:
-    layer.trainable = False
+    most_similar_idx = np.argmax(similarities)
+    return sentences[most_similar_idx], similarities[most_similar_idx]
 
-# Compile the model
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+# Main function to load text and perform Q&A
+def main(file_path, user_query):
+    # Step 1: Load and preprocess the text
+    text = load_text(file_path)
+    sentences, tokenized_sentences = preprocess_text(text)
 
-# Set callbacks for saving the best model and early stopping
-checkpoint = ModelCheckpoint(model_save_path, monitor='val_accuracy', verbose=1, save_best_only=True, mode='max')
-early_stopping = EarlyStopping(monitor='val_loss', patience=5, verbose=1)
+    # Step 2: Train Word2Vec on the tokenized sentences
+    model = train_word2vec(tokenized_sentences)
 
-# Train the model
-history = model.fit(
-    train_generator,
-    epochs=20,  # Increase or decrease depending on performance
-    validation_data=validation_generator,
-    callbacks=[checkpoint, early_stopping]
-)
+    # Step 3: Find the most similar sentence to the user's query
+    most_similar_sentence, similarity_score = find_most_similar_sentence(model, sentences, tokenized_sentences, user_query)
 
-# Save the final model
-model.save(model_save_path)
-print(f"Model saved to {model_save_path}")
+    print(f"Question: {user_query}")
+    print(f"Answer: {most_similar_sentence}")
+    print(f"Similarity Score: {similarity_score:.4f}")
 
+# Example usage:
+if __name__ == "__main__":
+    text_file_path = 'your_text_file.txt'  # Path to your .txt file
+    user_question = input("Enter your question: ")  # User's question
+    main(text_file_path, user_question)
