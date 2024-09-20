@@ -50,30 +50,30 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
+
 from gensim.models import Word2Vec
-import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-# Download NLTK data for sentence and word tokenization
-nltk.download('punkt')
-
-# Load text data
+# Load the text file
 def load_text(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
     return text
 
-# Preprocess text into sentences and tokenize
-def preprocess_text(text):
-    sentences = sent_tokenize(text)  # Tokenize into sentences
-    tokenized_sentences = [word_tokenize(sentence.lower()) for sentence in sentences]  # Tokenize words in each sentence
-    return sentences, tokenized_sentences
+# Tokenize sentences by splitting on periods (.)
+def tokenize_sentences(text):
+    return [sentence.strip() for sentence in text.split('.') if sentence]
 
-# Train or load Word2Vec model
-def train_word2vec(tokenized_sentences, vector_size=100, window=5, min_count=1):
-    model = Word2Vec(tokenized_sentences, vector_size=vector_size, window=window, min_count=min_count)
+# Tokenize words by splitting on spaces
+def tokenize_words(sentence):
+    # Remove punctuation for simplicity
+    sentence = ''.join([char if char.isalnum() or char.isspace() else ' ' for char in sentence])
+    return sentence.lower().split()
+
+# Train Word2Vec model
+def train_word2vec(tokenized_sentences):
+    model = Word2Vec(sentences=tokenized_sentences, vector_size=100, window=5, min_count=1, workers=4)
     return model
 
 # Get the sentence embedding by averaging word vectors
@@ -89,7 +89,7 @@ def get_sentence_embedding(model, sentence_tokens):
 
 # Find the most similar sentence to the user query
 def find_most_similar_sentence(model, sentences, tokenized_sentences, query):
-    query_tokens = word_tokenize(query.lower())
+    query_tokens = tokenize_words(query)
     query_embedding = get_sentence_embedding(model, query_tokens)
 
     sentence_embeddings = [get_sentence_embedding(model, sent) for sent in tokenized_sentences]
@@ -98,20 +98,21 @@ def find_most_similar_sentence(model, sentences, tokenized_sentences, query):
     most_similar_idx = np.argmax(similarities)
     return sentences[most_similar_idx], similarities[most_similar_idx]
 
-# Main function to load text and perform Q&A
+# Main function to load text, process user query, and find the answer
 def main(file_path, user_query):
-    # Step 1: Load and preprocess the text
+    # Step 1: Load and tokenize the text
     text = load_text(file_path)
-    sentences, tokenized_sentences = preprocess_text(text)
+    sentences = tokenize_sentences(text)
+    tokenized_sentences = [tokenize_words(sentence) for sentence in sentences]
 
     # Step 2: Train Word2Vec on the tokenized sentences
     model = train_word2vec(tokenized_sentences)
 
-    # Step 3: Find the most similar sentence to the user's query
-    most_similar_sentence, similarity_score = find_most_similar_sentence(model, sentences, tokenized_sentences, user_query)
+    # Step 3: Find the most similar sentence
+    best_sentence, similarity_score = find_most_similar_sentence(model, sentences, tokenized_sentences, user_query)
 
     print(f"Question: {user_query}")
-    print(f"Answer: {most_similar_sentence}")
+    print(f"Answer: {best_sentence}")
     print(f"Similarity Score: {similarity_score:.4f}")
 
 # Example usage:
