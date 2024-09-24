@@ -51,27 +51,39 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from transformers import AutoModelForQuestionAnswering, AutoTokenizer, pipeline
+from transformers import AutoModelForQuestionAnswering, AutoTokenizer
+import torch
 
 # Specify paths
 model_path = '/content/drive/MyDrive/qa/models'
 tokenizer_path = '/content/drive/MyDrive/qa/tokenizer'
-#context_file_path = '/content/drive/MyDrive/qa/context.txt'  # Path to your text file
 
 # Load model and tokenizer
 model = AutoModelForQuestionAnswering.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-
-# Create the question-answering pipeline
-nlp = pipeline('question-answering', model=model, tokenizer=tokenizer)
-
 # Input for question-answering
-QA_input = {
-    'question': 'Why is model conversion important?',
-    'context': 'context'
-}
+question = "Why is model conversion important?"
+context = "Model conversion is important because it allows models trained in one format to be used in another environment or platform."
 
-# Get predictions
-res = nlp(QA_input)
-print(res)
+# Tokenize input
+inputs = tokenizer(question, context, return_tensors='pt')
+
+# Get model output
+with torch.no_grad():
+    outputs = model(**inputs)
+
+# Extract the start and end logits
+start_logits = outputs.start_logits
+end_logits = outputs.end_logits
+
+# Get the most likely start and end token positions
+start_position = torch.argmax(start_logits)
+end_position = torch.argmax(end_logits)
+
+# Convert token IDs to the actual answer
+answer_tokens = inputs.input_ids[0][start_position:end_position + 1]
+answer = tokenizer.decode(answer_tokens, skip_special_tokens=True)
+
+# Print the result
+print("Answer:", answer)
