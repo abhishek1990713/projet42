@@ -57,33 +57,60 @@ import torch
 # Specify paths
 model_path = '/content/drive/MyDrive/qa/models'
 tokenizer_path = '/content/drive/MyDrive/qa/tokenizer'
+context_file_path = '/content/drive/MyDrive/qa/context.txt'  # Path to your text file
 
 # Load model and tokenizer
 model = AutoModelForQuestionAnswering.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-# Input for question-answering
-question = "Why is model conversion important?"
-context = "Model conversion is important because it allows models trained in one format to be used in another environment or platform."
+# Read the context from the .txt file
+with open(context_file_path, 'r', encoding='utf-8') as file:
+    context = file.read()
 
-# Tokenize input
-inputs = tokenizer(question, context, return_tensors='pt')
+# List of questions to ask
+questions = [
+    "What is the instrument date?",
+    "What date is mentioned on the document?",
+    "What is the sum to be paid?",
+    "How much is the payment in words?",
+    "What is the numerical value of the payment?",
+    "Who is the remitter?",
+    "What is the name of the company remitting the payment?",
+    "Who is the payee?",
+    "To whom should the payment be made?",
+    "What is the reference number?",
+    "Can you provide the reference number for this transaction?",
+    "How long is the payment valid for?",
+    "For how many months is this document valid?",
+    "What is stated about the cheque?",
+    "What type of cheque is mentioned in the document?",
+    "Is there any mention of authorization?",
+    "Where is the payment payable at?",
+    "At which branches can this cheque be cashed?"
+]
 
-# Get model output
-with torch.no_grad():
-    outputs = model(**inputs)
+# Iterate over each question, get the answer, and print both
+for question in questions:
+    # Tokenize input
+    inputs = tokenizer(question, context, return_tensors='pt')
 
-# Extract the start and end logits
-start_logits = outputs.start_logits
-end_logits = outputs.end_logits
+    # Get model output
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-# Get the most likely start and end token positions
-start_position = torch.argmax(start_logits)
-end_position = torch.argmax(end_logits)
+    # Extract the start and end logits
+    start_logits = outputs.start_logits
+    end_logits = outputs.end_logits
 
-# Convert token IDs to the actual answer
-answer_tokens = inputs.input_ids[0][start_position:end_position + 1]
-answer = tokenizer.decode(answer_tokens, skip_special_tokens=True)
+    # Get the most likely start and end token positions
+    start_position = torch.argmax(start_logits)
+    end_position = torch.argmax(end_logits)
 
-# Print the result
-print("Answer:", answer)
+    # Convert token IDs to the actual answer
+    answer_tokens = inputs.input_ids[0][start_position:end_position + 1]
+    answer = tokenizer.decode(answer_tokens, skip_special_tokens=True)
+
+    # Print the question and answer
+    print(f"Question: {question}")
+    print(f"Answer: {answer}\n")
+
