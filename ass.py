@@ -57,36 +57,24 @@ import torch
 # Specify paths
 model_path = '/content/drive/MyDrive/qa/models'
 tokenizer_path = '/content/drive/MyDrive/qa/tokenizer'
-context_file_path = '/content/drive/MyDrive/qa/context.txt'  # Path to your text file
+context_file_path = '/content/drive/MyDrive/qa/context.txt'  # Path to your Japanese text file
 
 # Load model and tokenizer
 model = AutoModelForQuestionAnswering.from_pretrained(model_path)
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-# Read the context from the .txt file
+# Read the context from the .txt file (which contains Japanese text)
 with open(context_file_path, 'r', encoding='utf-8') as file:
     context = file.read()
 
-# List of questions to ask
+# List of questions in Japanese
 questions = [
-    "What is the instrument date?",
-    "What date is mentioned on the document?",
-    "What is the sum to be paid?",
-    "How much is the payment in words?",
-    "What is the numerical value of the payment?",
-    "Who is the remitter?",
-    "What is the name of the company remitting the payment?",
-    "Who is the payee?",
-    "To whom should the payment be made?",
-    "What is the reference number?",
-    "Can you provide the reference number for this transaction?",
-    "How long is the payment valid for?",
-    "For how many months is this document valid?",
-    "What is stated about the cheque?",
-    "What type of cheque is mentioned in the document?",
-    "Is there any mention of authorization?",
-    "Where is the payment payable at?",
-    "At which branches can this cheque be cashed?"
+    "この文書の日付は何ですか？",  # What is the date on this document?
+    "有効期限はいつですか？",       # When is the expiration date?
+    "免許番号は何ですか？",         # What is the license number?
+    "住所はどこですか？",           # What is the address?
+    "車についての情報はありますか？", # Is there information about the car?
+    "眼鏡等の記載はありますか？"     # Is there any mention of glasses?
 ]
 
 # Iterate over each question, get the answer, and print both
@@ -113,4 +101,3 @@ for question in questions:
     # Print the question and answer
     print(f"Question: {question}")
     print(f"Answer: {answer}\n")
-
