@@ -51,53 +51,12 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from transformers import AutoModelForQuestionAnswering, AutoTokenizer
-import torch
-
-# Specify paths
-model_path = '/content/drive/MyDrive/qa/models'
-tokenizer_path = '/content/drive/MyDrive/qa/tokenizer'
-context_file_path = '/content/drive/MyDrive/qa/context.txt'  # Path to your Japanese text file
-
-# Load model and tokenizer
-model = AutoModelForQuestionAnswering.from_pretrained(model_path)
-tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-
-# Read the context from the .txt file (which contains Japanese text)
-with open(context_file_path, 'r', encoding='utf-8') as file:
-    context = file.read()
-
-# List of questions in Japanese
 questions = [
-    "この文書の日付は何ですか？",  # What is the date on this document?
-    "有効期限はいつですか？",       # When is the expiration date?
-    "免許番号は何ですか？",         # What is the license number?
-    "住所はどこですか？",           # What is the address?
-    "車についての情報はありますか？", # Is there information about the car?
-    "眼鏡等の記載はありますか？"     # Is there any mention of glasses?
+    "この年号は何年ですか？",         # What year is "昭和50"?
+    "日付はいつですか？",            # What is the date (06月03日)?
+    "住所はどこですか？",            # What is the address (重県津市垂水2566番地)?
+    "有効期限はいつですか？",         # When is the expiration date (平成24年07月01日まで有効)?
+    "免許番号は何ですか？",           # What is the license number (23456789000)?
+    "車に関する情報はありますか？",   # Is there any information about the car?
+    "眼鏡等について何か記載がありますか？"  # Is there any mention of glasses?
 ]
-
-# Iterate over each question, get the answer, and print both
-for question in questions:
-    # Tokenize input
-    inputs = tokenizer(question, context, return_tensors='pt')
-
-    # Get model output
-    with torch.no_grad():
-        outputs = model(**inputs)
-
-    # Extract the start and end logits
-    start_logits = outputs.start_logits
-    end_logits = outputs.end_logits
-
-    # Get the most likely start and end token positions
-    start_position = torch.argmax(start_logits)
-    end_position = torch.argmax(end_logits)
-
-    # Convert token IDs to the actual answer
-    answer_tokens = inputs.input_ids[0][start_position:end_position + 1]
-    answer = tokenizer.decode(answer_tokens, skip_special_tokens=True)
-
-    # Print the question and answer
-    print(f"Question: {question}")
-    print(f"Answer: {answer}\n")
