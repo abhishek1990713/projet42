@@ -53,8 +53,8 @@ if __name__ == '__main__':
 
 import MeCab
 
-# Initialize MeCab with the IPADIC dictionary
-mecab = MeCab.Tagger("-Ochasen")
+# Initialize MeCab without specifying the output format
+mecab = MeCab.Tagger()
 
 # Load text from a file (assuming your file is named 'japanese_text.txt')
 with open('japanese_text.txt', 'r', encoding='utf-8') as f:
