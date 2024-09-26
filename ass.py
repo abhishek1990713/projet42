@@ -53,11 +53,11 @@ if __name__ == '__main__':
 
 import MeCab
 
-# Initialize MeCab
+# Initialize MeCab without specifying the output format
 mecab = MeCab.Tagger()
 
-# Load text from a file (assuming your file is named 'text_input.txt')
-with open('text_input.txt', 'r', encoding='utf-8') as f:
+# Load text from a file (assuming your file is named 'japanese_text.txt')
+with open('japanese_text.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 # Tokenize the text using MeCab
@@ -78,36 +78,59 @@ def print_tokens(tokens):
         base_form = feature[6] if len(feature) > 6 else '*'  # Check length of feature list
         print(f"Surface: {token}, POS: {feature[0]}, Base Form: {base_form}")
 
-# Function to extract all nouns and their associated information
-def extract_nouns(tokens):
-    nouns = []
+# Function to find and print passport number in the tokenized text
+def find_passport_number(tokens):
+    print("\nQuestion: パスポート番号は何ですか？ (What is the passport number?)")
+    found_number = ""
     for token, feature in tokens:
-        if "名詞" in feature[0]:  # Check if the token is a noun
-            nouns.append(token)
-    return nouns
-
-# Function to respond to user questions
-def respond_to_question(question, nouns):
-    # Check if any noun is mentioned in the question
-    relevant_nouns = [noun for noun in nouns if noun in question]
-    
-    if relevant_nouns:
-        print(f"Found relevant information: {' '.join(relevant_nouns)}")
+        if "名詞" in feature[0] and ("TRO" in token or "R" in token):
+            found_number = token
+            break
+    if found_number:
+        print(f"Passport Number: {found_number}")
     else:
-        print("No relevant information found.")
+        print("No passport number found.")
 
-# Tokenize the text
+# Function to find and print dates in the tokenized text
+def find_dates(tokens):
+    print("\nQuestion: 発行日と有効期限はいつですか？ (What are the issue and expiration dates?)")
+    issue_date = ""
+    expiration_date = ""
+    dates = []
+    for token, feature in tokens:
+        if "名詞" in feature[0] and token.isdigit():
+            dates.append(token)
+    
+    if len(dates) >= 4:  # Assuming issue and expiration dates have year, month, and day
+        issue_date = f"{dates[0]} {dates[1]} {dates[2]}"  # e.g., "02 SEP 2013"
+        expiration_date = f"{dates[3]} {dates[4]} {dates[5]}"  # e.g., "02 SEP 2023"
+    
+    if issue_date and expiration_date:
+        print(f"Issue Date: {issue_date}")
+        print(f"Expiration Date: {expiration_date}")
+    else:
+        print("No dates found.")
+
+# Function to find and print names (e.g., "SAKURA") in the tokenized text
+def find_name(tokens):
+    print("\nQuestion: 名前は何ですか？ (What is the name?)")
+    name = ""
+    for token, feature in tokens:
+        if "名詞" in feature[0] and token.isalpha() and len(token) > 1:
+            name = token
+            break
+    if name:
+        print(f"Name: {name}")
+    else:
+        print("No name found.")
+
+# Tokenize and process the text
 tokens = tokenize_text(text)
 
 # Print the tokenized output
 print_tokens(tokens)
 
-# Extract nouns from the tokens
-nouns = extract_nouns(tokens)
-
-# User interaction loop
-while True:
-    question = input("\n何か質問がありますか？ (Do you have any questions? Type 'exit' to quit): ")
-    if question.lower() == 'exit':
-        break
-    respond_to_question(question, nouns)
+# Ask and answer specific questions
+find_passport_number(tokens)
+find_dates(tokens)
+find_name(tokens)
