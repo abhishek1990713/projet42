@@ -75,7 +75,8 @@ def tokenize_text(text):
 def print_tokens(tokens):
     print("Tokenized Text:")
     for token, feature in tokens:
-        print(f"Surface: {token}, POS: {feature[0]}, Base Form: {feature[6]}")
+        base_form = feature[6] if len(feature) > 6 else '*'  # Check length of feature list
+        print(f"Surface: {token}, POS: {feature[0]}, Base Form: {base_form}")
 
 # Function to find and print dates in the tokenized text
 def find_date(tokens):
