@@ -53,11 +53,11 @@ if __name__ == '__main__':
 
 import MeCab
 
-# Initialize MeCab without specifying the output format
+# Initialize MeCab
 mecab = MeCab.Tagger()
 
-# Load text from a file (assuming your file is named 'japanese_text.txt')
-with open('japanese_text.txt', 'r', encoding='utf-8') as f:
+# Load text from a file (assuming your file is named 'text_input.txt')
+with open('text_input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 # Tokenize the text using MeCab
@@ -78,49 +78,36 @@ def print_tokens(tokens):
         base_form = feature[6] if len(feature) > 6 else '*'  # Check length of feature list
         print(f"Surface: {token}, POS: {feature[0]}, Base Form: {base_form}")
 
-# Function to find and print dates in the tokenized text
-def find_date(tokens):
-    print("\nQuestion: 有効期限はいつですか？ (What is the expiration date?)")
-    found_dates = []
+# Function to extract all nouns and their associated information
+def extract_nouns(tokens):
+    nouns = []
     for token, feature in tokens:
-        if "名詞" in feature[0] and ("年" in token or "月" in token or "日" in token):
-            found_dates.append(token)
-    if found_dates:
-        print(f"Found Date: {' '.join(found_dates)}")
-    else:
-        print("No date found.")
+        if "名詞" in feature[0]:  # Check if the token is a noun
+            nouns.append(token)
+    return nouns
 
-# Function to find and print address-related tokens
-def find_address(tokens):
-    print("\nQuestion: 住所はどこですか？ (What is the address?)")
-    found_address = []
-    for token, feature in tokens:
-        if "名詞" in feature[0] and ("県" in token or "市" in token or "番地" in token):
-            found_address.append(token)
-    if found_address:
-        print(f"Found Address: {' '.join(found_address)}")
+# Function to respond to user questions
+def respond_to_question(question, nouns):
+    # Check if any noun is mentioned in the question
+    relevant_nouns = [noun for noun in nouns if noun in question]
+    
+    if relevant_nouns:
+        print(f"Found relevant information: {' '.join(relevant_nouns)}")
     else:
-        print("No address found.")
+        print("No relevant information found.")
 
-# Function to find and print numeric tokens (useful for IDs, numbers, etc.)
-def find_numbers(tokens):
-    print("\nQuestion: 番号は何ですか？ (What is the number?)")
-    found_numbers = []
-    for token, feature in tokens:
-        if feature[0] == "名詞" and token.isdigit():
-            found_numbers.append(token)
-    if found_numbers:
-        print(f"Found Numbers: {' '.join(found_numbers)}")
-    else:
-        print("No numbers found.")
-
-# Tokenize and process the text
+# Tokenize the text
 tokens = tokenize_text(text)
 
 # Print the tokenized output
 print_tokens(tokens)
 
-# Ask and answer specific questions
-find_date(tokens)
-find_address(tokens)
-find_numbers(tokens)
+# Extract nouns from the tokens
+nouns = extract_nouns(tokens)
+
+# User interaction loop
+while True:
+    question = input("\n何か質問がありますか？ (Do you have any questions? Type 'exit' to quit): ")
+    if question.lower() == 'exit':
+        break
+    respond_to_question(question, nouns)
