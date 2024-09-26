@@ -51,33 +51,39 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from sudachipy import tokenizer
-from sudachipy import dictionary
+import MeCab
 
-# Initialize the SudachiPy tokenizer
-tokenizer_obj = dictionary.Dictionary().create()
-mode = tokenizer.Tokenizer.SplitMode.C
+# Initialize MeCab with the IPADIC dictionary
+mecab = MeCab.Tagger("-Ochasen")
 
 # Load text from a file (assuming your file is named 'japanese_text.txt')
 with open('japanese_text.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
-# Tokenize the text using SudachiPy
-tokens = tokenizer_obj.tokenize(text, mode)
+# Tokenize the text using MeCab
+def tokenize_text(text):
+    node = mecab.parseToNode(text)
+    tokens = []
+    while node:
+        surface = node.surface  # The token itself
+        feature = node.feature.split(',')  # POS tagging and dictionary info
+        tokens.append((surface, feature))
+        node = node.next
+    return tokens
 
 # Function to print the tokens
 def print_tokens(tokens):
     print("Tokenized Text:")
-    for token in tokens:
-        print(f"Surface: {token.surface()}, Dictionary Form: {token.dictionary_form()}, Reading: {token.reading_form()}")
+    for token, feature in tokens:
+        print(f"Surface: {token}, POS: {feature[0]}, Base Form: {feature[6]}")
 
 # Function to find and print dates in the tokenized text
 def find_date(tokens):
     print("\nQuestion: 有効期限はいつですか？ (What is the expiration date?)")
     found_dates = []
-    for token in tokens:
-        if "年" in token.surface() or "月" in token.surface() or "日" in token.surface():
-            found_dates.append(token.surface())
+    for token, feature in tokens:
+        if "名詞" in feature[0] and ("年" in token or "月" in token or "日" in token):
+            found_dates.append(token)
     if found_dates:
         print(f"Found Date: {' '.join(found_dates)}")
     else:
@@ -87,25 +93,28 @@ def find_date(tokens):
 def find_address(tokens):
     print("\nQuestion: 住所はどこですか？ (What is the address?)")
     found_address = []
-    for token in tokens:
-        if "県" in token.surface() or "市" in token.surface() or "番地" in token.surface():
-            found_address.append(token.surface())
+    for token, feature in tokens:
+        if "名詞" in feature[0] and ("県" in token or "市" in token or "番地" in token):
+            found_address.append(token)
     if found_address:
         print(f"Found Address: {' '.join(found_address)}")
     else:
         print("No address found.")
 
-# Function to find and print numeric tokens (useful for ID, numbers, etc.)
+# Function to find and print numeric tokens (useful for IDs, numbers, etc.)
 def find_numbers(tokens):
     print("\nQuestion: 番号は何ですか？ (What is the number?)")
     found_numbers = []
-    for token in tokens:
-        if token.surface().isdigit():
-            found_numbers.append(token.surface())
+    for token, feature in tokens:
+        if feature[0] == "名詞" and token.isdigit():
+            found_numbers.append(token)
     if found_numbers:
         print(f"Found Numbers: {' '.join(found_numbers)}")
     else:
         print("No numbers found.")
+
+# Tokenize and process the text
+tokens = tokenize_text(text)
 
 # Print the tokenized output
 print_tokens(tokens)
@@ -114,4 +123,3 @@ print_tokens(tokens)
 find_date(tokens)
 find_address(tokens)
 find_numbers(tokens)
-
