@@ -53,52 +53,58 @@ if __name__ == '__main__':
 
 import cv2
 
-def preprocess_image(image_path):
+def preprocess_image_for_contours(image_path):
     # Load the image in grayscale
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Resize the image to a fixed size (if needed, based on template dimensions)
-    image_resized = cv2.resize(image, (640, 400))  # Resize to template size (example size)
-    
-    # Apply Gaussian Blur to reduce noise (optional)
-    image_preprocessed = cv2.GaussianBlur(image_resized, (5, 5), 0)
+    # Resize the image to a standard size (adjust according to template size)
+    image_resized = cv2.resize(image, (640, 400))  # Example size
 
-    return image_preprocessed
+    # Apply Gaussian Blur to reduce noise
+    image_blur = cv2.GaussianBlur(image_resized, (5, 5), 0)
 
-def match_license_layout(template_path, check_image_path, threshold=0.75):
-    # Preprocess both images
-    template = preprocess_image(template_path)
-    check_image = preprocess_image(check_image_path)
+    # Apply Canny edge detection
+    edges = cv2.Canny(image_blur, 50, 150)
 
-    # Initialize ORB detector
-    orb = cv2.ORB_create()
+    return edges
 
-    # Detect keypoints and descriptors
-    keypoints1, descriptors1 = orb.detectAndCompute(template, None)
-    keypoints2, descriptors2 = orb.detectAndCompute(check_image, None)
+def get_contours(image):
+    # Find contours from the edges
+    contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return contours
 
-    # Use BFMatcher to find the best matches
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(descriptors1, descriptors2)
+def match_license_contours(template_path, check_image_path, similarity_threshold=0.15):
+    # Preprocess both images for contour detection
+    template_edges = preprocess_image_for_contours(template_path)
+    check_image_edges = preprocess_image_for_contours(check_image_path)
 
-    # Sort matches based on distance (lower is better)
-    matches = sorted(matches, key=lambda x: x.distance)
+    # Get contours for both images
+    template_contours = get_contours(template_edges)
+    check_image_contours = get_contours(check_image_edges)
 
-    # Calculate good matches
-    good_matches = [m for m in matches if m.distance < 50]
+    # If no contours found, return False
+    if len(template_contours) == 0 or len(check_image_contours) == 0:
+        print("No contours found in one or both images!")
+        return False
 
-    # Match ratio
-    match_ratio = len(good_matches) / len(matches)
+    # Compare the largest contour of both images (assuming the license borders are the largest contour)
+    template_contour = max(template_contours, key=cv2.contourArea)
+    check_image_contour = max(check_image_contours, key=cv2.contourArea)
 
-    return match_ratio >= threshold
+    # Match the shapes using Hu Moments (cv2.matchShapes)
+    similarity_score = cv2.matchShapes(template_contour, check_image_contour, cv2.CONTOURS_MATCH_I1, 0.0)
 
-# Paths to your template and image to check
+    # Return True if the similarity score is below the threshold
+    return similarity_score < similarity_threshold
+
+# Paths to the correct license (template) and the one to check
 template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
-# Compare layout
-is_matching = match_license_layout(template_image_path, check_image_path)
+# Match contours
+is_matching = match_license_contours(template_image_path, check_image_path)
 
+# Output the result
 if is_matching:
     print("The layout of the check image matches the template.")
 else:
