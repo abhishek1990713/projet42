@@ -51,58 +51,62 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
+from paddleocr import PaddleOCR
 import cv2
 
-def preprocess_image_for_contours(image_path):
-    # Load the image in grayscale
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+# Initialize the PaddleOCR model (Japanese language model)
+ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 
-    # Resize the image to a standard size (adjust according to template size)
-    image_resized = cv2.resize(image, (640, 400))  # Example size
+def extract_text_and_boxes(image_path):
+    # Use OCR to extract text and bounding boxes
+    result = ocr.ocr(image_path, cls=True)
 
-    # Apply Gaussian Blur to reduce noise
-    image_blur = cv2.GaussianBlur(image_resized, (5, 5), 0)
+    # Collect bounding boxes and text
+    boxes = []
+    for page in result:
+        for line in page:
+            # Extract box coordinates
+            box = line[0]
+            text = line[1][0]
+            boxes.append((box, text))
+    
+    return boxes
 
-    # Apply Canny edge detection
-    edges = cv2.Canny(image_blur, 50, 150)
+def compare_text_layout(template_boxes, check_boxes, threshold=0.7):
+    matched_boxes = 0
 
-    return edges
-
-def get_contours(image):
-    # Find contours from the edges
-    contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return contours
-
-def match_license_contours(template_path, check_image_path, similarity_threshold=0.15):
-    # Preprocess both images for contour detection
-    template_edges = preprocess_image_for_contours(template_path)
-    check_image_edges = preprocess_image_for_contours(check_image_path)
-
-    # Get contours for both images
-    template_contours = get_contours(template_edges)
-    check_image_contours = get_contours(check_image_edges)
-
-    # If no contours found, return False
-    if len(template_contours) == 0 or len(check_image_contours) == 0:
-        print("No contours found in one or both images!")
+    # Compare the number of boxes and their positions (You can also compare the text if needed)
+    if len(template_boxes) != len(check_boxes):
+        print("Different number of text blocks detected.")
         return False
 
-    # Compare the largest contour of both images (assuming the license borders are the largest contour)
-    template_contour = max(template_contours, key=cv2.contourArea)
-    check_image_contour = max(check_image_contours, key=cv2.contourArea)
+    for i in range(len(template_boxes)):
+        # Compare the positions of the bounding boxes
+        template_box = template_boxes[i][0]
+        check_box = check_boxes[i][0]
 
-    # Match the shapes using Hu Moments (cv2.matchShapes)
-    similarity_score = cv2.matchShapes(template_contour, check_image_contour, cv2.CONTOURS_MATCH_I1, 0.0)
+        # Calculate overlap or distance between bounding boxes (using IoU or other methods)
+        distance = sum([abs(template_box[j] - check_box[j]) for j in range(len(template_box))]) / len(template_box)
 
-    # Return True if the similarity score is below the threshold
-    return similarity_score < similarity_threshold
+        # If the distance is within a threshold, consider it a match
+        if distance < threshold:
+            matched_boxes += 1
+
+    # If the majority of the boxes match, the layout is considered the same
+    match_ratio = matched_boxes / len(template_boxes)
+    
+    return match_ratio >= threshold
 
 # Paths to the correct license (template) and the one to check
 template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
-# Match contours
-is_matching = match_license_contours(template_image_path, check_image_path)
+# Extract text layout (boxes) from both images
+template_boxes = extract_text_and_boxes(template_image_path)
+check_boxes = extract_text_and_boxes(check_image_path)
+
+# Compare the layouts
+is_matching = compare_text_layout(template_boxes, check_boxes)
 
 # Output the result
 if is_matching:
