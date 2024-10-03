@@ -52,38 +52,49 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
 import cv2
-from skimage.metrics import structural_similarity as ssim
 
-def compare_images(image1_path, image2_path):
+def match_license_layout(template_path, check_image_path, threshold=0.75):
     # Load both images in grayscale
-    image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
-    image2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)
+    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+    check_image = cv2.imread(check_image_path, cv2.IMREAD_GRAYSCALE)
 
     # Check if images are loaded correctly
-    if image1 is None or image2 is None:
-        print("Image not found!")
+    if template is None or check_image is None:
+        print("Template or check image not found!")
         return False
 
-    # Resize images to the same dimensions if needed (assume image1 is the template)
-    image2_resized = cv2.resize(image2, (image1.shape[1], image1.shape[0]))
+    # Initialize ORB detector
+    orb = cv2.ORB_create()
 
-    # Compute the Structural Similarity Index (SSIM)
-    similarity_score, _ = ssim(image1, image2_resized, full=True)
+    # Detect keypoints and descriptors for both images
+    keypoints1, descriptors1 = orb.detectAndCompute(template, None)
+    keypoints2, descriptors2 = orb.detectAndCompute(check_image, None)
 
-    return similarity_score
+    # Use BFMatcher to find the best matches
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(descriptors1, descriptors2)
 
-# Paths to your correct image and the one to check
-correct_image_path = 'path_to_correct_image'
+    # Sort matches based on distance (the lower, the better)
+    matches = sorted(matches, key=lambda x: x.distance)
+
+    # Calculate the number of good matches
+    good_matches = [m for m in matches if m.distance < 50]
+
+    # Calculate the match ratio
+    match_ratio = len(good_matches) / len(matches)
+
+    # If match ratio exceeds the threshold, the layouts are considered matching
+    return match_ratio >= threshold
+
+# Paths to your template (correct image) and the image to check
+template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
-# Compare the two images
-similarity_score = compare_images(correct_image_path, check_image_path)
+# Match the layout of the check image to the template
+is_matching = match_license_layout(template_image_path, check_image_path)
 
-# Define a threshold for similarity (e.g., 0.8 for 80% similarity)
-threshold = 0.8
-
-# Output the results
-if similarity_score >= threshold:
-    print(f"The images match with a similarity score of {similarity_score:.2f}.")
+# Output the result
+if is_matching:
+    print("The layout of the check image matches the template.")
 else:
-    print(f"The images do not match. Similarity score: {similarity_score:.2f}.")
+    print("The layout of the check image does NOT match the template.")
