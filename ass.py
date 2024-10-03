@@ -51,22 +51,39 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from transformers import pipeline, BartForConditionalGeneration, BartTokenizer
+import cv2
+from skimage.metrics import structural_similarity as ssim
 
-# Load the saved model and tokenizer
-model = BartForConditionalGeneration.from_pretrained('/content/drive/MyDrive/qa/bart-large-cnn')
-tokenizer = BartTokenizer.from_pretrained('/content/drive/MyDrive/qa/bart-large-cnn')
+def compare_images(image1_path, image2_path):
+    # Load both images in grayscale
+    image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
+    image2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)
 
-# Create the pipeline with the locally loaded model and tokenizer
-ARTICLE = """ New York (CNN)When Liana Barrientos was 23 years old, she got married..."""
+    # Check if images are loaded correctly
+    if image1 is None or image2 is None:
+        print("Image not found!")
+        return False
 
-# Tokenize the input text
-inputs = tokenizer(ARTICLE, return_tensors="pt", max_length=1024, truncation=True)
+    # Resize images to the same dimensions if needed (assume image1 is the template)
+    image2_resized = cv2.resize(image2, (image1.shape[1], image1.shape[0]))
 
-# Generate summary IDs (with model predictions)
-summary_ids = model.generate(inputs["input_ids"], max_length=130, min_length=30, length_penalty=2.0, num_beams=4, early_stopping=True)
+    # Compute the Structural Similarity Index (SSIM)
+    similarity_score, _ = ssim(image1, image2_resized, full=True)
 
-# Decode the summary
-summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return similarity_score
 
-print(summary)
+# Paths to your correct image and the one to check
+correct_image_path = 'path_to_correct_image'
+check_image_path = 'path_to_check_image'
+
+# Compare the two images
+similarity_score = compare_images(correct_image_path, check_image_path)
+
+# Define a threshold for similarity (e.g., 0.8 for 80% similarity)
+threshold = 0.8
+
+# Output the results
+if similarity_score >= threshold:
+    print(f"The images match with a similarity score of {similarity_score:.2f}.")
+else:
+    print(f"The images do not match. Similarity score: {similarity_score:.2f}.")
