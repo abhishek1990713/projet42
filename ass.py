@@ -50,66 +50,76 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-
 from paddleocr import PaddleOCR
 import cv2
 
-# Initialize the PaddleOCR model (Japanese language model)
+# Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 
-def extract_text_and_boxes(image_path):
-    # Use OCR to extract text and bounding boxes
+def extract_fields(image_path, field_keywords=["名前", "日付"]):
+    """Extract the bounding boxes of specific fields from the image using OCR."""
     result = ocr.ocr(image_path, cls=True)
-
-    # Collect bounding boxes and text
-    boxes = []
+    
+    # Define areas of interest: name and date in the template
+    fields = {"name": [], "date": []}
+    
+    # You can adjust the conditions to target specific fields (name, date, etc.)
     for page in result:
         for line in page:
-            # Extract box coordinates
-            box = line[0]
             text = line[1][0]
-            boxes.append((box, text))
+            box = line[0]
+            
+            # Check if the text contains key field names (名前 for name, 日付 for date)
+            if any(keyword in text for keyword in field_keywords):
+                if "名前" in text:  # Field for Name
+                    fields["name"].append(box)
+                if "日付" in text:  # Field for Date
+                    fields["date"].append(box)
     
-    return boxes
+    return fields
 
-def compare_text_layout(template_boxes, check_boxes, threshold=0.7):
-    matched_boxes = 0
-
-    # Compare the number of boxes and their positions (You can also compare the text if needed)
-    if len(template_boxes) != len(check_boxes):
-        print("Different number of text blocks detected.")
+def compare_field_layout(template_fields, check_fields, threshold=0.1):
+    """Compare the layout of extracted field bounding boxes from both images."""
+    
+    # Compare the number of bounding boxes for each field
+    if len(template_fields["name"]) != len(check_fields["name"]) or len(template_fields["date"]) != len(check_fields["date"]):
         return False
 
-    for i in range(len(template_boxes)):
-        # Compare the positions of the bounding boxes
-        template_box = template_boxes[i][0]
-        check_box = check_boxes[i][0]
-
-        # Calculate overlap or distance between bounding boxes (using IoU or other methods)
-        distance = sum([abs(template_box[j] - check_box[j]) for j in range(len(template_box))]) / len(template_box)
-
-        # If the distance is within a threshold, consider it a match
-        if distance < threshold:
-            matched_boxes += 1
-
-    # If the majority of the boxes match, the layout is considered the same
-    match_ratio = matched_boxes / len(template_boxes)
+    # Compare bounding boxes for each field (name and date)
+    def compare_boxes(boxes1, boxes2):
+        """Compare the positions and sizes of bounding boxes."""
+        for b1, b2 in zip(boxes1, boxes2):
+            x1, y1, x2, y2 = cv2.boundingRect(b1)
+            x3, y3, x4, y4 = cv2.boundingRect(b2)
+            
+            # Calculate the overlap or distance between the bounding boxes
+            overlap = abs(x2 - x1 - (x4 - x3)) < threshold and abs(y2 - y1 - (y4 - y3)) < threshold
+            if not overlap:
+                return False
+        return True
     
-    return match_ratio >= threshold
+    # Compare name and date fields
+    if not compare_boxes(template_fields["name"], check_fields["name"]):
+        return False
+    if not compare_boxes(template_fields["date"], check_fields["date"]):
+        return False
 
-# Paths to the correct license (template) and the one to check
+    return True
+
+# Paths to the template and the check image
 template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
-# Extract text layout (boxes) from both images
-template_boxes = extract_text_and_boxes(template_image_path)
-check_boxes = extract_text_and_boxes(check_image_path)
+# Extract field layouts from both images
+template_fields = extract_fields(template_image_path)
+check_fields = extract_fields(check_image_path)
 
 # Compare the layouts
-is_matching = compare_text_layout(template_boxes, check_boxes)
+is_matching = compare_field_layout(template_fields, check_fields)
 
 # Output the result
 if is_matching:
     print("The layout of the check image matches the template.")
 else:
     print("The layout of the check image does NOT match the template.")
+
