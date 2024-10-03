@@ -53,20 +53,27 @@ if __name__ == '__main__':
 
 import cv2
 
-def match_license_layout(template_path, check_image_path, threshold=0.75):
-    # Load both images in grayscale
-    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
-    check_image = cv2.imread(check_image_path, cv2.IMREAD_GRAYSCALE)
+def preprocess_image(image_path):
+    # Load the image in grayscale
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Check if images are loaded correctly
-    if template is None or check_image is None:
-        print("Template or check image not found!")
-        return False
+    # Resize the image to a fixed size (if needed, based on template dimensions)
+    image_resized = cv2.resize(image, (640, 400))  # Resize to template size (example size)
+    
+    # Apply Gaussian Blur to reduce noise (optional)
+    image_preprocessed = cv2.GaussianBlur(image_resized, (5, 5), 0)
+
+    return image_preprocessed
+
+def match_license_layout(template_path, check_image_path, threshold=0.75):
+    # Preprocess both images
+    template = preprocess_image(template_path)
+    check_image = preprocess_image(check_image_path)
 
     # Initialize ORB detector
     orb = cv2.ORB_create()
 
-    # Detect keypoints and descriptors for both images
+    # Detect keypoints and descriptors
     keypoints1, descriptors1 = orb.detectAndCompute(template, None)
     keypoints2, descriptors2 = orb.detectAndCompute(check_image, None)
 
@@ -74,26 +81,24 @@ def match_license_layout(template_path, check_image_path, threshold=0.75):
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = bf.match(descriptors1, descriptors2)
 
-    # Sort matches based on distance (the lower, the better)
+    # Sort matches based on distance (lower is better)
     matches = sorted(matches, key=lambda x: x.distance)
 
-    # Calculate the number of good matches
+    # Calculate good matches
     good_matches = [m for m in matches if m.distance < 50]
 
-    # Calculate the match ratio
+    # Match ratio
     match_ratio = len(good_matches) / len(matches)
 
-    # If match ratio exceeds the threshold, the layouts are considered matching
     return match_ratio >= threshold
 
-# Paths to your template (correct image) and the image to check
+# Paths to your template and image to check
 template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
-# Match the layout of the check image to the template
+# Compare layout
 is_matching = match_license_layout(template_image_path, check_image_path)
 
-# Output the result
 if is_matching:
     print("The layout of the check image matches the template.")
 else:
