@@ -56,25 +56,25 @@ import cv2
 # Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 
-def extract_fields(image_path, field_keywords=["名前", "日付"]):
+# Define the specific Japanese keywords to extract
+field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
+
+def extract_fields(image_path, field_keywords):
     """Extract the bounding boxes of specific fields from the image using OCR."""
     result = ocr.ocr(image_path, cls=True)
     
-    # Define areas of interest: name and date in the template
-    fields = {"name": [], "date": []}
+    # Dictionary to store detected fields
+    fields = {keyword: [] for keyword in field_keywords}
     
-    # You can adjust the conditions to target specific fields (name, date, etc.)
     for page in result:
         for line in page:
             text = line[1][0]
             box = line[0]
             
-            # Check if the text contains key field names (名前 for name, 日付 for date)
-            if any(keyword in text for keyword in field_keywords):
-                if "名前" in text:  # Field for Name
-                    fields["name"].append(box)
-                if "日付" in text:  # Field for Date
-                    fields["date"].append(box)
+            # Check if the text contains any of the defined keywords
+            for keyword in field_keywords:
+                if keyword in text:
+                    fields[keyword].append(box)
     
     return fields
 
@@ -82,10 +82,11 @@ def compare_field_layout(template_fields, check_fields, threshold=0.1):
     """Compare the layout of extracted field bounding boxes from both images."""
     
     # Compare the number of bounding boxes for each field
-    if len(template_fields["name"]) != len(check_fields["name"]) or len(template_fields["date"]) != len(check_fields["date"]):
-        return False
+    for keyword in field_keywords:
+        if len(template_fields[keyword]) != len(check_fields[keyword]):
+            return False
 
-    # Compare bounding boxes for each field (name and date)
+    # Compare bounding boxes for each keyword field
     def compare_boxes(boxes1, boxes2):
         """Compare the positions and sizes of bounding boxes."""
         for b1, b2 in zip(boxes1, boxes2):
@@ -98,11 +99,10 @@ def compare_field_layout(template_fields, check_fields, threshold=0.1):
                 return False
         return True
     
-    # Compare name and date fields
-    if not compare_boxes(template_fields["name"], check_fields["name"]):
-        return False
-    if not compare_boxes(template_fields["date"], check_fields["date"]):
-        return False
+    # Compare bounding boxes for each field
+    for keyword in field_keywords:
+        if not compare_boxes(template_fields[keyword], check_fields[keyword]):
+            return False
 
     return True
 
@@ -111,8 +111,8 @@ template_image_path = 'path_to_template_license'
 check_image_path = 'path_to_check_image'
 
 # Extract field layouts from both images
-template_fields = extract_fields(template_image_path)
-check_fields = extract_fields(check_image_path)
+template_fields = extract_fields(template_image_path, field_keywords)
+check_fields = extract_fields(check_image_path, field_keywords)
 
 # Compare the layouts
 is_matching = compare_field_layout(template_fields, check_fields)
