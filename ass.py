@@ -50,80 +50,42 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
+
 from paddleocr import PaddleOCR
-import cv2
-import numpy as np
 
 # Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 
-# Define the specific Japanese keywords to extract
+# Define the specific Japanese keywords to check
 field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
 
-def extract_fields(image_path, field_keywords):
-    """Extract the bounding boxes of specific fields from the image using OCR."""
+def check_keywords_in_image(image_path, field_keywords):
+    """Extract text from image and check for the presence of specific keywords."""
     result = ocr.ocr(image_path, cls=True)
     
-    # Dictionary to store detected fields
-    fields = {keyword: [] for keyword in field_keywords}
-    
+    # Gather all extracted text into a single string
+    extracted_text = ""
     for page in result:
         for line in page:
-            text = line[1][0]
-            box = line[0]
-            
-            # Check if the text contains any of the defined keywords
-            for keyword in field_keywords:
-                if keyword in text:
-                    fields[keyword].append(box)
+            extracted_text += line[1][0] + " "
     
-    return fields
-
-def compare_field_layout(template_fields, check_fields, threshold=0.1):
-    """Compare the layout of extracted field bounding boxes from both images."""
-    
-    # Compare the number of bounding boxes for each field
+    # Check for the presence of each keyword
+    missing_keywords = []
     for keyword in field_keywords:
-        if len(template_fields[keyword]) != len(check_fields[keyword]):
-            return False
-
-    # Compare bounding boxes for each keyword field
-    def compare_boxes(boxes1, boxes2):
-        """Compare the positions and sizes of bounding boxes."""
-        for b1, b2 in zip(boxes1, boxes2):
-            # Convert lists of corner points to NumPy arrays for cv2.boundingRect
-            np_b1 = np.array(b1, dtype=np.int32)
-            np_b2 = np.array(b2, dtype=np.int32)
-            
-            # Use boundingRect to get x, y, width, height for both boxes
-            x1, y1, w1, h1 = cv2.boundingRect(np_b1)
-            x2, y2, w2, h2 = cv2.boundingRect(np_b2)
-            
-            # Calculate if the bounding boxes are similar (within the threshold)
-            if abs(w1 - w2) > threshold * w1 or abs(h1 - h2) > threshold * h1:
-                return False
-        return True
+        if keyword not in extracted_text:
+            missing_keywords.append(keyword)
     
-    # Compare bounding boxes for each field
-    for keyword in field_keywords:
-        if not compare_boxes(template_fields[keyword], check_fields[keyword]):
-            return False
+    # Return result
+    if len(missing_keywords) == 0:
+        return "All keywords are present in the image."
+    else:
+        return f"Missing keywords: {', '.join(missing_keywords)}"
 
-    return True
+# Path to the image to check
+image_path = 'path_to_image_license'
 
-# Paths to the template and the check image
-template_image_path = 'path_to_template_license'
-check_image_path = 'path_to_check_image'
-
-# Extract field layouts from both images
-template_fields = extract_fields(template_image_path, field_keywords)
-check_fields = extract_fields(check_image_path, field_keywords)
-
-# Compare the layouts
-is_matching = compare_field_layout(template_fields, check_fields)
+# Check the image for keywords
+result = check_keywords_in_image(image_path, field_keywords)
 
 # Output the result
-if is_matching:
-    print("The layout of the check image matches the template.")
-else:
-    print("The layout of the check image does NOT match the template.")
+print(result)
