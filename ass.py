@@ -51,6 +51,7 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
+import os
 from paddleocr import PaddleOCR
 
 # Initialize the PaddleOCR model for Japanese language
@@ -70,22 +71,22 @@ def check_keywords_in_image(image_path, field_keywords):
             extracted_text += line[1][0] + " "
     
     # Check for the presence of each keyword
-    missing_keywords = []
     for keyword in field_keywords:
         if keyword not in extracted_text:
-            missing_keywords.append(keyword)
+            return "Image is not Good"  # If any keyword is missing
     
-    # Return result
-    if len(missing_keywords) == 0:
-        return "All keywords are present in the image."
-    else:
-        return f"Missing keywords: {', '.join(missing_keywords)}"
+    return "Image is Good"  # If all keywords are present
 
-# Path to the image to check
-image_path = 'path_to_image_license'
+def check_images_in_folder(folder_path, field_keywords):
+    """Check all images in the folder and print whether each is Good or Not Good."""
+    for filename in os.listdir(folder_path):
+        if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
+            image_path = os.path.join(folder_path, filename)
+            result = check_keywords_in_image(image_path, field_keywords)
+            print(f"{filename}: {result}")
 
-# Check the image for keywords
-result = check_keywords_in_image(image_path, field_keywords)
+# Folder containing the images
+folder_path = 'path_to_image_folder'
 
-# Output the result
-print(result)
+# Check all images in the folder and print results
+check_images_in_folder(folder_path, field_keywords)
