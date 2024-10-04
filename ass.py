@@ -52,6 +52,7 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 from paddleocr import PaddleOCR
 import cv2
+import numpy as np
 
 # Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
@@ -90,12 +91,16 @@ def compare_field_layout(template_fields, check_fields, threshold=0.1):
     def compare_boxes(boxes1, boxes2):
         """Compare the positions and sizes of bounding boxes."""
         for b1, b2 in zip(boxes1, boxes2):
-            x1, y1, x2, y2 = cv2.boundingRect(b1)
-            x3, y3, x4, y4 = cv2.boundingRect(b2)
+            # Convert lists of corner points to NumPy arrays for cv2.boundingRect
+            np_b1 = np.array(b1, dtype=np.int32)
+            np_b2 = np.array(b2, dtype=np.int32)
             
-            # Calculate the overlap or distance between the bounding boxes
-            overlap = abs(x2 - x1 - (x4 - x3)) < threshold and abs(y2 - y1 - (y4 - y3)) < threshold
-            if not overlap:
+            # Use boundingRect to get x, y, width, height for both boxes
+            x1, y1, w1, h1 = cv2.boundingRect(np_b1)
+            x2, y2, w2, h2 = cv2.boundingRect(np_b2)
+            
+            # Calculate if the bounding boxes are similar (within the threshold)
+            if abs(w1 - w2) > threshold * w1 or abs(h1 - h2) > threshold * h1:
                 return False
         return True
     
@@ -122,4 +127,3 @@ if is_matching:
     print("The layout of the check image matches the template.")
 else:
     print("The layout of the check image does NOT match the template.")
-
