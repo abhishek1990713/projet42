@@ -54,7 +54,7 @@ import os
 import cv2
 
 def preprocess_image(image_path, output_folder):
-    """Preprocess the image by resizing and enhancing the text."""
+    """Preprocess the image by resizing, enhancing contrast, and applying a threshold."""
     # Read the image
     image = cv2.imread(image_path)
     
@@ -85,12 +85,17 @@ def preprocess_image(image_path, output_folder):
     output_image_path = os.path.join(output_folder, os.path.basename(image_path))
     cv2.imwrite(output_image_path, thresh_image)
 
+    # Optionally show the processed image (for debugging purposes)
+    cv2.imshow('Processed Image', thresh_image)
+    cv2.waitKey(0)  # Wait for a key press
+    cv2.destroyAllWindows()
+
     print(f"Processed and saved: {output_image_path}")
 
 def process_images_in_folder(input_folder, output_folder):
     """Process all images in the input folder and save them to the output folder."""
     for filename in os.listdir(input_folder):
-        if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
+        if filename.lower().endswith((".png", ".jpg", ".jpeg")):  # Process only image files
             image_path = os.path.join(input_folder, filename)
             preprocess_image(image_path, output_folder)
 
