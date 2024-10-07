@@ -53,6 +53,7 @@ if __name__ == '__main__':
 import os
 from paddleocr import PaddleOCR
 from PIL import Image, ImageEnhance
+import io
 
 # Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
@@ -61,32 +62,30 @@ ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
 
 def preprocess_image(image_path):
-    """Resize the image to 600x600, set DPI to 500, and darken the image."""
+    """Resize the image to 600x600, set DPI to 500, and darken the image, returning it as an in-memory object."""
     img = Image.open(image_path)
     
     # Resize the image to 600x600
     img = img.resize((600, 600))
     
-    # Set the DPI to 500 (Pillow sets DPI via the 'info' dictionary when saving)
-    img.info['dpi'] = (500, 500)
-    
-    # Darken the image by enhancing the contrast (use ImageEnhance module)
+    # Darken the image by enhancing the contrast
     enhancer = ImageEnhance.Contrast(img)
     img = enhancer.enhance(2.0)  # Adjust this factor to make the text darker
-
-    # Save the preprocessed image in a temporary file (overwrite the original image)
-    preprocessed_image_path = image_path.replace(".png", "_preprocessed.png").replace(".jpg", "_preprocessed.jpg").replace(".jpeg", "_preprocessed.jpeg")
-    img.save(preprocessed_image_path, dpi=(500, 500))
     
-    return preprocessed_image_path
+    # Convert the image to bytes (in-memory processing)
+    img_byte_array = io.BytesIO()
+    img.save(img_byte_array, format='PNG')
+    img_byte_array = img_byte_array.getvalue()
+    
+    return img_byte_array
 
 def check_keywords_in_image(image_path, field_keywords):
     """Extract text from image and check for the presence of specific keywords."""
     # Preprocess the image first (resize, set DPI, darken text)
-    preprocessed_image_path = preprocess_image(image_path)
+    preprocessed_image = preprocess_image(image_path)
 
-    # Run OCR on the preprocessed image
-    result = ocr.ocr(preprocessed_image_path, cls=True)
+    # Run OCR on the preprocessed in-memory image
+    result = ocr.ocr(preprocessed_image, cls=True)
     
     # Gather all extracted text into a single string
     extracted_text = ""
@@ -119,4 +118,3 @@ folder_path = 'path_to_image_folder'  # Replace with your folder path
 
 # Check all images in the folder and print results
 check_images_in_folder(folder_path, field_keywords)
-
