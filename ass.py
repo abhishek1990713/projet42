@@ -60,19 +60,25 @@ ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 # Define the specific Japanese keywords to check
 field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
 
-def preprocess_image(image_path, width=900, height=550):
-    """Preprocess the image by darkening the text and resizing it."""
+def preprocess_image(image_path):
+    """Preprocess the image by resizing and enhancing the text."""
     # Read the image
     image = cv2.imread(image_path)
 
-    # Resize the image to the specified dimensions
-    resized_image = cv2.resize(image, (width, height))
+    # Resize the image (e.g., double the size)
+    height, width = image.shape[:2]
+    new_width = int(width * 2)  # Increase width by a factor (e.g., 2)
+    new_height = int(height * 2)  # Increase height by a factor (e.g., 2)
+    resized_image = cv2.resize(image, (new_width, new_height))
 
     # Convert to grayscale
     gray_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
 
+    # Apply histogram equalization to enhance contrast
+    enhanced_image = cv2.equalizeHist(gray_image)
+
     # Apply a binary threshold to darken the text
-    _, thresh_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY_INV)
+    _, thresh_image = cv2.threshold(enhanced_image, 150, 255, cv2.THRESH_BINARY_INV)
 
     # Save the processed image temporarily
     processed_image_path = "processed_" + os.path.basename(image_path)
