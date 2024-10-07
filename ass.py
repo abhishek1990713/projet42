@@ -52,59 +52,101 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
 import cv2
+from paddleocr import PaddleOCR
 
-def preprocess_image(image_path, output_folder):
-    """Preprocess the image to enhance text for better OCR results and save it in the output folder."""
+# Initialize the PaddleOCR model for Japanese language
+ocr = PaddleOCR(use_angle_cls=True, lang='japan')
+
+# Define the specific Japanese keywords for driving license and passport
+driving_license_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
+passport_keywords = ["氏名", "国籍", "生年月日", "パスポート番号", "有効期限", "発行日", "発行機関"]
+
+def preprocess_image(image_path):
+    """Preprocess the image by darkening the text."""
     # Read the image
     image = cv2.imread(image_path)
 
-    # Check if the image was loaded correctly
-    if image is None:
-        print(f"Error loading image: {image_path}")
-        return None
-
-    # Resize the image to increase size (for example, scale by a factor of 2)
-    height, width = image.shape[:2]
-    new_size = (int(width * 2), int(height * 2))
-    resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_CUBIC)
-
     # Convert to grayscale
-    gray_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # Apply Gaussian Blur to reduce noise
-    blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
+    # Apply a binary threshold to darken the text
+    _, thresh_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY_INV)
 
-    # Apply a fixed binary threshold to convert to black and white
-    _, binary_image = cv2.threshold(blurred_image, 150, 255, cv2.THRESH_BINARY)
-
-    # Construct the output path
-    processed_image_path = os.path.join(output_folder, "processed_" + os.path.basename(image_path))
-    
-    # Save the processed image in the output folder
-    cv2.imwrite(processed_image_path, binary_image)
+    # Save the processed image temporarily
+    processed_image_path = "processed_" + os.path.basename(image_path)
+    cv2.imwrite(processed_image_path, thresh_image)
 
     return processed_image_path
 
-def preprocess_images_in_folder(input_folder, output_folder):
-    """Preprocess all images in the input folder and save them in the output folder."""
-    # Create the output folder if it doesn't exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+def identify_document_type(image_path):
+    """Identify if the document is a driving license or passport based on keywords."""
+    # Preprocess the image
+    processed_image_path = preprocess_image(image_path)
 
-    processed_images = []
-    for filename in os.listdir(input_folder):
+    # Perform OCR on the processed image
+    result = ocr.ocr(processed_image_path, cls=True)
+    
+    # Gather all extracted text into a single string
+    extracted_text = ""
+    for page in result:
+        for line in page:
+            extracted_text += line[1][0] + " "
+    
+    # Check for keywords related to driving license and passport
+    is_driving_license = any(keyword in extracted_text for keyword in driving_license_keywords)
+    is_passport = any(keyword in extracted_text for keyword in passport_keywords)
+    
+    if is_driving_license:
+        return "Driving License"
+    elif is_passport:
+        return "Passport"
+    else:
+        return "Unknown Document"
+
+def check_keywords_in_image(image_path, document_type):
+    """Extract text from image and check for the presence of specific keywords."""
+    if document_type == "Driving License":
+        field_keywords = driving_license_keywords
+    elif document_type == "Passport":
+        field_keywords = passport_keywords
+    else:
+        return "Document type unknown; cannot check keywords."
+
+    # Preprocess the image
+    processed_image_path = preprocess_image(image_path)
+
+    # Perform OCR on the processed image
+    result = ocr.ocr(processed_image_path, cls=True)
+    
+    # Gather all extracted text into a single string
+    extracted_text = ""
+    for page in result:
+        for line in page:
+            extracted_text += line[1][0] + " "
+    
+    # Check for the presence of each keyword
+    missing_keywords = []
+    for keyword in field_keywords:
+        if keyword not in extracted_text:
+            missing_keywords.append(keyword)
+    
+    # Return result
+    if len(missing_keywords) == 0:
+        return "Image is Good"  # All keywords are present
+    else:
+        return f"Image is not Good: Missing keywords: {', '.join(missing_keywords)}"
+
+def check_images_in_folder(folder_path):
+    """Check all images in the folder and print whether each is Good or Not Good."""
+    for filename in os.listdir(folder_path):
         if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
-            image_path = os.path.join(input_folder, filename)
-            processed_image_path = preprocess_image(image_path, output_folder)
-            if processed_image_path:
-                processed_images.append(processed_image_path)
-                print(f"Processed: {filename} -> {processed_image_path}")
+            image_path = os.path.join(folder_path, filename)
+            document_type = identify_document_type(image_path)
+            result = check_keywords_in_image(image_path, document_type)
+            print(f"{filename}: {result}")
 
-    return processed_images
+# Folder containing the images
+folder_path = 'path_to_image_folder'  # Replace with your folder path
 
-# Folders for input and output
-input_folder = 'path_to_input_folder'  # Replace with your input folder path
-output_folder = 'path_to_output_folder'  # Replace with your output folder path
-
-# Process all images in the input folder and save to the output folder
-processed_images = preprocess_images_in_folder(input_folder, output_folder)
+# Check all images in the folder and print results
+check_images_in_folder(folder_path)
