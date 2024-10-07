@@ -52,10 +52,9 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
 import cv2
-import numpy as np
 
-def preprocess_image(image_path):
-    """Preprocess the image to enhance text for better OCR results."""
+def preprocess_image(image_path, output_folder):
+    """Preprocess the image to enhance text for better OCR results and save it in the output folder."""
     # Read the image
     image = cv2.imread(image_path)
 
@@ -78,29 +77,34 @@ def preprocess_image(image_path):
     # Apply a fixed binary threshold to convert to black and white
     _, binary_image = cv2.threshold(blurred_image, 150, 255, cv2.THRESH_BINARY)
 
-    # Save the processed image temporarily
-    processed_image_path = "processed_" + os.path.basename(image_path)
+    # Construct the output path
+    processed_image_path = os.path.join(output_folder, "processed_" + os.path.basename(image_path))
+    
+    # Save the processed image in the output folder
     cv2.imwrite(processed_image_path, binary_image)
 
     return processed_image_path
 
-def preprocess_images_in_folder(folder_path):
-    """Preprocess all images in the folder and save them."""
+def preprocess_images_in_folder(input_folder, output_folder):
+    """Preprocess all images in the input folder and save them in the output folder."""
+    # Create the output folder if it doesn't exist
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
     processed_images = []
-    for filename in os.listdir(folder_path):
+    for filename in os.listdir(input_folder):
         if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
-            image_path = os.path.join(folder_path, filename)
-            processed_image_path = preprocess_image(image_path)
+            image_path = os.path.join(input_folder, filename)
+            processed_image_path = preprocess_image(image_path, output_folder)
             if processed_image_path:
                 processed_images.append(processed_image_path)
                 print(f"Processed: {filename} -> {processed_image_path}")
 
     return processed_images
 
-# Folder containing the images
-folder_path = 'path_to_image_folder'  # Replace with your folder path
+# Folders for input and output
+input_folder = 'path_to_input_folder'  # Replace with your input folder path
+output_folder = 'path_to_output_folder'  # Replace with your output folder path
 
-# Process all images in the folder
-processed_images = preprocess_images_in_folder(folder_path)
-
-# Now you can run OCR on processed images if needed
+# Process all images in the input folder and save to the output folder
+processed_images = preprocess_images_in_folder(input_folder, output_folder)
