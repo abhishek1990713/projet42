@@ -52,56 +52,55 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
 import cv2
+import numpy as np
 
-def preprocess_image(image_path, output_folder):
-    """Preprocess the image by resizing, enhancing contrast, and applying a threshold."""
+def preprocess_image(image_path):
+    """Preprocess the image to enhance text for better OCR results."""
     # Read the image
     image = cv2.imread(image_path)
-    
-    if image is None:
-        print(f"Error: Unable to read the image {image_path}. Skipping.")
-        return  # Return if the image could not be read
 
-    # Resize the image (e.g., double the size)
+    # Check if the image was loaded correctly
+    if image is None:
+        print(f"Error loading image: {image_path}")
+        return None
+
+    # Resize the image to increase size (for example, scale by a factor of 2)
     height, width = image.shape[:2]
-    new_width = int(width * 2)  # Increase width by a factor (e.g., 2)
-    new_height = int(height * 2)  # Increase height by a factor (e.g., 2)
-    resized_image = cv2.resize(image, (new_width, new_height))
+    new_size = (int(width * 2), int(height * 2))
+    resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_CUBIC)
 
     # Convert to grayscale
     gray_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
 
-    # Apply histogram equalization to enhance contrast
-    enhanced_image = cv2.equalizeHist(gray_image)
+    # Apply Gaussian Blur to reduce noise
+    blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
 
-    # Apply a binary threshold to darken the text
-    _, thresh_image = cv2.threshold(enhanced_image, 150, 255, cv2.THRESH_BINARY_INV)
+    # Apply a fixed binary threshold to convert to black and white
+    _, binary_image = cv2.threshold(blurred_image, 150, 255, cv2.THRESH_BINARY)
 
-    # Create output folder if it doesn't exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    # Save the processed image temporarily
+    processed_image_path = "processed_" + os.path.basename(image_path)
+    cv2.imwrite(processed_image_path, binary_image)
 
-    # Save the processed image
-    output_image_path = os.path.join(output_folder, os.path.basename(image_path))
-    cv2.imwrite(output_image_path, thresh_image)
+    return processed_image_path
 
-    # Optionally show the processed image (for debugging purposes)
-    cv2.imshow('Processed Image', thresh_image)
-    cv2.waitKey(0)  # Wait for a key press
-    cv2.destroyAllWindows()
+def preprocess_images_in_folder(folder_path):
+    """Preprocess all images in the folder and save them."""
+    processed_images = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
+            image_path = os.path.join(folder_path, filename)
+            processed_image_path = preprocess_image(image_path)
+            if processed_image_path:
+                processed_images.append(processed_image_path)
+                print(f"Processed: {filename} -> {processed_image_path}")
 
-    print(f"Processed and saved: {output_image_path}")
+    return processed_images
 
-def process_images_in_folder(input_folder, output_folder):
-    """Process all images in the input folder and save them to the output folder."""
-    for filename in os.listdir(input_folder):
-        if filename.lower().endswith((".png", ".jpg", ".jpeg")):  # Process only image files
-            image_path = os.path.join(input_folder, filename)
-            preprocess_image(image_path, output_folder)
+# Folder containing the images
+folder_path = 'path_to_image_folder'  # Replace with your folder path
 
-# Specify the input and output folders
-input_folder = 'path_to_input_folder'  # Replace with your input folder path
-output_folder = 'path_to_output_folder'  # Replace with your desired output folder path
+# Process all images in the folder
+processed_images = preprocess_images_in_folder(folder_path)
 
-# Process all images in the input folder
-process_images_in_folder(input_folder, output_folder)
+# Now you can run OCR on processed images if needed
