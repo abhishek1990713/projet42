@@ -52,18 +52,15 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
 import cv2
-from paddleocr import PaddleOCR
 
-# Initialize the PaddleOCR model for Japanese language
-ocr = PaddleOCR(use_angle_cls=True, lang='japan')
-
-# Define the specific Japanese keywords to check
-field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
-
-def preprocess_image(image_path):
+def preprocess_image(image_path, output_folder):
     """Preprocess the image by resizing and enhancing the text."""
     # Read the image
     image = cv2.imread(image_path)
+    
+    if image is None:
+        print(f"Error: Unable to read the image {image_path}. Skipping.")
+        return  # Return if the image could not be read
 
     # Resize the image (e.g., double the size)
     height, width = image.shape[:2]
@@ -80,48 +77,26 @@ def preprocess_image(image_path):
     # Apply a binary threshold to darken the text
     _, thresh_image = cv2.threshold(enhanced_image, 150, 255, cv2.THRESH_BINARY_INV)
 
-    # Save the processed image temporarily
-    processed_image_path = "processed_" + os.path.basename(image_path)
-    cv2.imwrite(processed_image_path, thresh_image)
+    # Create output folder if it doesn't exist
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    return processed_image_path
+    # Save the processed image
+    output_image_path = os.path.join(output_folder, os.path.basename(image_path))
+    cv2.imwrite(output_image_path, thresh_image)
 
-def check_keywords_in_image(image_path, field_keywords):
-    """Extract text from image and check for the presence of specific keywords."""
-    # Preprocess the image
-    processed_image_path = preprocess_image(image_path)
+    print(f"Processed and saved: {output_image_path}")
 
-    # Perform OCR on the processed image
-    result = ocr.ocr(processed_image_path, cls=True)
-    
-    # Gather all extracted text into a single string
-    extracted_text = ""
-    for page in result:
-        for line in page:
-            extracted_text += line[1][0] + " "
-    
-    # Check for the presence of each keyword
-    missing_keywords = []
-    for keyword in field_keywords:
-        if keyword not in extracted_text:
-            missing_keywords.append(keyword)
-    
-    # Return result
-    if len(missing_keywords) == 0:
-        return "Image is Good"  # All keywords are present
-    else:
-        return f"Image is not Good: Missing keywords: {', '.join(missing_keywords)}"
-
-def check_images_in_folder(folder_path, field_keywords):
-    """Check all images in the folder and print whether each is Good or Not Good."""
-    for filename in os.listdir(folder_path):
+def process_images_in_folder(input_folder, output_folder):
+    """Process all images in the input folder and save them to the output folder."""
+    for filename in os.listdir(input_folder):
         if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
-            image_path = os.path.join(folder_path, filename)
-            result = check_keywords_in_image(image_path, field_keywords)
-            print(f"{filename}: {result}")
+            image_path = os.path.join(input_folder, filename)
+            preprocess_image(image_path, output_folder)
 
-# Folder containing the images
-folder_path = 'path_to_image_folder'  # Replace with your folder path
+# Specify the input and output folders
+input_folder = 'path_to_input_folder'  # Replace with your input folder path
+output_folder = 'path_to_output_folder'  # Replace with your desired output folder path
 
-# Check all images in the folder and print results
-check_images_in_folder(folder_path, field_keywords)
+# Process all images in the input folder
+process_images_in_folder(input_folder, output_folder)
