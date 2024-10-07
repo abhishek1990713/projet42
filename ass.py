@@ -51,9 +51,8 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
+import cv2
 from paddleocr import PaddleOCR
-from PIL import Image, ImageEnhance
-import io
 
 # Initialize the PaddleOCR model for Japanese language
 ocr = PaddleOCR(use_angle_cls=True, lang='japan')
@@ -61,31 +60,33 @@ ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 # Define the specific Japanese keywords to check
 field_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
 
-def preprocess_image(image_path):
-    """Resize the image to 600x600, set DPI to 500, and darken the image, returning it as an in-memory object."""
-    img = Image.open(image_path)
-    
-    # Resize the image to 600x600
-    img = img.resize((600, 600))
-    
-    # Darken the image by enhancing the contrast
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0)  # Adjust this factor to make the text darker
-    
-    # Convert the image to bytes (in-memory processing)
-    img_byte_array = io.BytesIO()
-    img.save(img_byte_array, format='PNG')
-    img_byte_array = img_byte_array.getvalue()
-    
-    return img_byte_array
+def preprocess_image(image_path, width=900, height=550):
+    """Preprocess the image by darkening the text and resizing it."""
+    # Read the image
+    image = cv2.imread(image_path)
+
+    # Resize the image to the specified dimensions
+    resized_image = cv2.resize(image, (width, height))
+
+    # Convert to grayscale
+    gray_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
+
+    # Apply a binary threshold to darken the text
+    _, thresh_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY_INV)
+
+    # Save the processed image temporarily
+    processed_image_path = "processed_" + os.path.basename(image_path)
+    cv2.imwrite(processed_image_path, thresh_image)
+
+    return processed_image_path
 
 def check_keywords_in_image(image_path, field_keywords):
     """Extract text from image and check for the presence of specific keywords."""
-    # Preprocess the image first (resize, set DPI, darken text)
-    preprocessed_image = preprocess_image(image_path)
+    # Preprocess the image
+    processed_image_path = preprocess_image(image_path)
 
-    # Run OCR on the preprocessed in-memory image
-    result = ocr.ocr(preprocessed_image, cls=True)
+    # Perform OCR on the processed image
+    result = ocr.ocr(processed_image_path, cls=True)
     
     # Gather all extracted text into a single string
     extracted_text = ""
