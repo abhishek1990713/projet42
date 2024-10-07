@@ -51,7 +51,6 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
-import cv2
 from paddleocr import PaddleOCR
 
 # Initialize the PaddleOCR model for Japanese language
@@ -59,77 +58,42 @@ ocr = PaddleOCR(use_angle_cls=True, lang='japan')
 
 # Define the specific Japanese keywords for driving license and passport
 driving_license_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
-passport_keywords = ["氏名", "国籍", "生年月日", "パスポート番号", "有効期限", "発行日", "発行機関"]
+passport_keywords = ["氏名", "生年月日", "国籍", "旅券番号", "発行日", "有効期限", "発行機関"]
 
-def preprocess_image(image_path):
-    """Preprocess the image by darkening the text."""
-    # Read the image
-    image = cv2.imread(image_path)
-
-    # Convert to grayscale
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Apply a binary threshold to darken the text
-    _, thresh_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY_INV)
-
-    # Save the processed image temporarily
-    processed_image_path = "processed_" + os.path.basename(image_path)
-    cv2.imwrite(processed_image_path, thresh_image)
-
-    return processed_image_path
-
-def identify_document_type(image_path):
-    """Identify if the document is a driving license or passport based on keywords."""
-    # Preprocess the image
-    processed_image_path = preprocess_image(image_path)
-
-    # Perform OCR on the processed image
-    result = ocr.ocr(processed_image_path, cls=True)
-    
-    # Gather all extracted text into a single string
-    extracted_text = ""
-    for page in result:
-        for line in page:
-            extracted_text += line[1][0] + " "
-    
-    # Check for keywords related to driving license and passport
-    is_driving_license = any(keyword in extracted_text for keyword in driving_license_keywords)
-    is_passport = any(keyword in extracted_text for keyword in passport_keywords)
-    
-    if is_driving_license:
-        return "Driving License"
-    elif is_passport:
-        return "Passport"
+def identify_image_type(image_path):
+    """Identify if the image is a Driving License or Passport."""
+    # This is a simple implementation. You can enhance it using image features or filename patterns.
+    if "driving" in image_path.lower() or "license" in image_path.lower():
+        return "driving_license"
+    elif "passport" in image_path.lower():
+        return "passport"
     else:
-        return "Unknown Document"
+        return "unknown"
 
-def check_keywords_in_image(image_path, document_type):
+def check_keywords_in_image(image_path):
     """Extract text from image and check for the presence of specific keywords."""
-    if document_type == "Driving License":
-        field_keywords = driving_license_keywords
-    elif document_type == "Passport":
-        field_keywords = passport_keywords
-    else:
-        return "Document type unknown; cannot check keywords."
+    result = ocr.ocr(image_path, cls=True)
 
-    # Preprocess the image
-    processed_image_path = preprocess_image(image_path)
-
-    # Perform OCR on the processed image
-    result = ocr.ocr(processed_image_path, cls=True)
-    
     # Gather all extracted text into a single string
     extracted_text = ""
     for page in result:
         for line in page:
             extracted_text += line[1][0] + " "
     
-    # Check for the presence of each keyword
-    missing_keywords = []
-    for keyword in field_keywords:
-        if keyword not in extracted_text:
-            missing_keywords.append(keyword)
+    # Identify the image type
+    image_type = identify_image_type(image_path)
     
+    # Check for the presence of each keyword based on image type
+    if image_type == "driving_license":
+        keywords = driving_license_keywords
+    elif image_type == "passport":
+        keywords = passport_keywords
+    else:
+        return "Unknown image type."
+
+    # Check for missing keywords
+    missing_keywords = [keyword for keyword in keywords if keyword not in extracted_text]
+
     # Return result
     if len(missing_keywords) == 0:
         return "Image is Good"  # All keywords are present
@@ -141,8 +105,7 @@ def check_images_in_folder(folder_path):
     for filename in os.listdir(folder_path):
         if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
             image_path = os.path.join(folder_path, filename)
-            document_type = identify_document_type(image_path)
-            result = check_keywords_in_image(image_path, document_type)
+            result = check_keywords_in_image(image_path)
             print(f"{filename}: {result}")
 
 # Folder containing the images
