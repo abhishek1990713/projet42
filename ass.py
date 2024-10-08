@@ -51,8 +51,8 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import numpy as np
-from tensorflow.keras.preprocessing import image
 import os
+import tensorflow as tf
 
 # Load the best weights from training
 model.load_weights('best_model.h5')
@@ -62,11 +62,11 @@ test_dir = 'test_data/'  # Replace with your test image folder
 
 # Function to preprocess and predict a single image
 def predict_image(img_path, model):
-    # Load image
-    img = image.load_img(img_path, target_size=(224, 224))
+    # Load image using TensorFlow
+    img = tf.keras.utils.load_img(img_path, target_size=(224, 224))
     
     # Preprocess image
-    img_array = image.img_to_array(img)
+    img_array = tf.keras.utils.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
     img_array /= 255.0  # Rescale image (same as training)
 
