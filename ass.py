@@ -50,24 +50,40 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import os
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, Dropout
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-# Base directory containing the two folders: 'Driving license' and 'passport'
-base_dir = 'data/'
+# Path to the downloaded VGG16 weights file
+weights_path = 'path_to_your_vgg16_model/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
-# Image size and batch size
-IMG_SIZE = 224
-BATCH_SIZE = 32
+# Load VGG16 model with pre-trained weights from the downloaded file
+# Set `include_top=False` to exclude the fully connected layers, allowing you to add your own
+base_model = VGG16(weights=weights_path, include_top=False, input_shape=(224, 224, 3))
 
-# Data augmentation and normalization for training
+# Freeze the base layers (optional, if you don't want to train these layers)
+for layer in base_model.layers:
+    layer.trainable = False
+
+# Add custom layers on top of the VGG16 base
+model = Sequential([
+    base_model,
+    Flatten(),
+    Dense(512, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid')  # Use sigmoid for binary classification
+])
+
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=0.0001),
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+# Now you can use the model for training, assuming you have set up your data generators
+
+# Example of data augmentation and splitting
 datagen = ImageDataGenerator(
     rescale=1./255,
     rotation_range=40,
@@ -79,57 +95,30 @@ datagen = ImageDataGenerator(
     validation_split=0.2  # Split 20% for validation
 )
 
-# Train generator with 80% of the data
+# Assuming 'data' folder contains 'passport' and 'Driving license' folders
 train_generator = datagen.flow_from_directory(
-    base_dir,
-    target_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
-    class_mode='binary',  # Binary classification: passport vs driving license
-    subset='training'     # Use subset for training
-)
-
-# Validation generator with 20% of the data
-val_generator = datagen.flow_from_directory(
-    base_dir,
-    target_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
+    'data/',
+    target_size=(224, 224),
+    batch_size=32,
     class_mode='binary',
-    subset='validation'   # Use subset for validation
+    subset='training'
 )
 
-# Load VGG16 with pre-trained weights
-base_model = VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3))
-
-# Freeze the layers of VGG16 so that they are not trained
-for layer in base_model.layers:
-    layer.trainable = False
-
-# Create a new model on top of VGG16
-model = Sequential([
-    base_model,
-    Flatten(),
-    Dense(512, activation='relu'),
-    Dropout(0.5),
-    Dense(1, activation='sigmoid')  # Output layer for binary classification
-])
-
-# Compile the model
-model.compile(optimizer=Adam(learning_rate=0.0001),
-              loss='binary_crossentropy',
-              metrics=['accuracy'])
-
-# Model checkpoint to save the best model
-checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True, mode='min')
+val_generator = datagen.flow_from_directory(
+    'data/',
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='binary',
+    subset='validation'
+)
 
 # Train the model
 history = model.fit(
     train_generator,
     epochs=10,
-    validation_data=val_generator,
-    callbacks=[checkpoint]
+    validation_data=val_generator
 )
 
-# Load the best model and evaluate
-model.load_weights('best_model.h5')
+# Evaluate the model
 loss, accuracy = model.evaluate(val_generator)
 print(f'Validation Accuracy: {accuracy * 100:.2f}%')
