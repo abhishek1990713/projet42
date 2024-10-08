@@ -51,65 +51,85 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 import os
-from paddleocr import PaddleOCR
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
 
-# Initialize the PaddleOCR model for Japanese language
-ocr = PaddleOCR(use_angle_cls=True, lang='japan')
+# Base directory containing the two folders: 'Driving license' and 'passport'
+base_dir = 'data/'
 
-# Define the specific Japanese keywords for driving license and passport
-driving_license_keywords = ["氏名", "日生", "本籍", "住所", "支払", "免許の", "条件等", "号", "公安委員会"]
-passport_keywords = ["氏名", "生年月日", "国籍", "旅券番号", "発行日", "有効期限", "発行機関"]
+# Image size and batch size
+IMG_SIZE = 224
+BATCH_SIZE = 32
 
-def identify_image_type(image_path):
-    """Identify if the image is a Driving License or Passport."""
-    # This is a simple implementation. You can enhance it using image features or filename patterns.
-    if "driving" in image_path.lower() or "license" in image_path.lower():
-        return "driving_license"
-    elif "passport" in image_path.lower():
-        return "passport"
-    else:
-        return "unknown"
+# Data augmentation and normalization for training
+datagen = ImageDataGenerator(
+    rescale=1./255,
+    rotation_range=40,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    validation_split=0.2  # Split 20% for validation
+)
 
-def check_keywords_in_image(image_path):
-    """Extract text from image and check for the presence of specific keywords."""
-    result = ocr.ocr(image_path, cls=True)
+# Train generator with 80% of the data
+train_generator = datagen.flow_from_directory(
+    base_dir,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    class_mode='binary',  # Binary classification: passport vs driving license
+    subset='training'     # Use subset for training
+)
 
-    # Gather all extracted text into a single string
-    extracted_text = ""
-    for page in result:
-        for line in page:
-            extracted_text += line[1][0] + " "
-    
-    # Identify the image type
-    image_type = identify_image_type(image_path)
-    
-    # Check for the presence of each keyword based on image type
-    if image_type == "driving_license":
-        keywords = driving_license_keywords
-    elif image_type == "passport":
-        keywords = passport_keywords
-    else:
-        return "Unknown image type."
+# Validation generator with 20% of the data
+val_generator = datagen.flow_from_directory(
+    base_dir,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    class_mode='binary',
+    subset='validation'   # Use subset for validation
+)
 
-    # Check for missing keywords
-    missing_keywords = [keyword for keyword in keywords if keyword not in extracted_text]
+# Load VGG16 with pre-trained weights
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3))
 
-    # Return result
-    if len(missing_keywords) == 0:
-        return "Image is Good"  # All keywords are present
-    else:
-        return f"Image is not Good: Missing keywords: {', '.join(missing_keywords)}"
+# Freeze the layers of VGG16 so that they are not trained
+for layer in base_model.layers:
+    layer.trainable = False
 
-def check_images_in_folder(folder_path):
-    """Check all images in the folder and print whether each is Good or Not Good."""
-    for filename in os.listdir(folder_path):
-        if filename.endswith((".png", ".jpg", ".jpeg")):  # Process only image files
-            image_path = os.path.join(folder_path, filename)
-            result = check_keywords_in_image(image_path)
-            print(f"{filename}: {result}")
+# Create a new model on top of VGG16
+model = Sequential([
+    base_model,
+    Flatten(),
+    Dense(512, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid')  # Output layer for binary classification
+])
 
-# Folder containing the images
-folder_path = 'path_to_image_folder'  # Replace with your folder path
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=0.0001),
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
 
-# Check all images in the folder and print results
-check_images_in_folder(folder_path)
+# Model checkpoint to save the best model
+checkpoint = ModelCheckpoint('best_model.h5', monitor='val_loss', save_best_only=True, mode='min')
+
+# Train the model
+history = model.fit(
+    train_generator,
+    epochs=10,
+    validation_data=val_generator,
+    callbacks=[checkpoint]
+)
+
+# Load the best model and evaluate
+model.load_weights('best_model.h5')
+loss, accuracy = model.evaluate(val_generator)
+print(f'Validation Accuracy: {accuracy * 100:.2f}%')
