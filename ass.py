@@ -50,75 +50,36 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-from tensorflow.keras.applications import VGG16
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Flatten, Dropout
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import numpy as np
+from tensorflow.keras.preprocessing import image
+import os
 
-# Path to the downloaded VGG16 weights file
-weights_path = 'path_to_your_vgg16_model/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
+# Load the best weights from training
+model.load_weights('best_model.h5')
 
-# Load VGG16 model with pre-trained weights from the downloaded file
-# Set `include_top=False` to exclude the fully connected layers, allowing you to add your own
-base_model = VGG16(weights=weights_path, include_top=False, input_shape=(224, 224, 3))
+# Directory where your test images are stored
+test_dir = 'test_data/'  # Replace with your test image folder
 
-# Freeze the base layers (optional, if you don't want to train these layers)
-for layer in base_model.layers:
-    layer.trainable = False
+# Function to preprocess and predict a single image
+def predict_image(img_path, model):
+    # Load image
+    img = image.load_img(img_path, target_size=(224, 224))
+    
+    # Preprocess image
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    img_array /= 255.0  # Rescale image (same as training)
 
-# Add custom layers on top of the VGG16 base
-model = Sequential([
-    base_model,
-    Flatten(),
-    Dense(512, activation='relu'),
-    Dropout(0.5),
-    Dense(1, activation='sigmoid')  # Use sigmoid for binary classification
-])
+    # Make prediction
+    prediction = model.predict(img_array)
+    
+    # Interpret prediction (assuming binary classification)
+    if prediction[0] > 0.5:
+        print(f'{os.path.basename(img_path)}: Passport')
+    else:
+        print(f'{os.path.basename(img_path)}: Driving License')
 
-# Compile the model
-model.compile(optimizer=Adam(learning_rate=0.0001),
-              loss='binary_crossentropy',
-              metrics=['accuracy'])
-
-# Now you can use the model for training, assuming you have set up your data generators
-
-# Example of data augmentation and splitting
-datagen = ImageDataGenerator(
-    rescale=1./255,
-    rotation_range=40,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    shear_range=0.2,
-    zoom_range=0.2,
-    horizontal_flip=True,
-    validation_split=0.2  # Split 20% for validation
-)
-
-# Assuming 'data' folder contains 'passport' and 'Driving license' folders
-train_generator = datagen.flow_from_directory(
-    'data/',
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='binary',
-    subset='training'
-)
-
-val_generator = datagen.flow_from_directory(
-    'data/',
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='binary',
-    subset='validation'
-)
-
-# Train the model
-history = model.fit(
-    train_generator,
-    epochs=10,
-    validation_data=val_generator
-)
-
-# Evaluate the model
-loss, accuracy = model.evaluate(val_generator)
-print(f'Validation Accuracy: {accuracy * 100:.2f}%')
+# Iterate through all test images in the directory
+for img_file in os.listdir(test_dir):
+    img_path = os.path.join(test_dir, img_file)
+    predict_image(img_path, model)
