@@ -54,9 +54,8 @@ import os
 import numpy as np
 import pandas as pd
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
-from tensorflow.keras.applications import VGG16, ResNet50, InceptionV3
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.metrics import classification_report, accuracy_score
 
@@ -65,7 +64,7 @@ IMG_SIZE = 224  # Input image size
 BATCH_SIZE = 32
 EPOCHS = 10  # Adjust based on your needs
 DATA_DIR = 'data/'  # Update this with your dataset path
-RESULTS_EXCEL = 'model_results.xlsx'
+RESULTS_EXCEL = 'custom_cnn_results.xlsx'
 
 # Data Preparation
 datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)  # 20% for validation
@@ -86,12 +85,50 @@ validation_generator = datagen.flow_from_directory(
     subset='validation'  # Set as validation data
 )
 
-# Function to build and compile model
-def build_model(base_model, num_classes):
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    x = Dense(num_classes, activation='softmax')(x)
-    model = Model(inputs=base_model.input, outputs=x)
+# Function to build custom CNN model
+def build_custom_cnn(num_classes):
+    model = Sequential()
+    
+    # 1st convolutional layer
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 3)))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 2nd convolutional layer
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 3rd convolutional layer
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 4th convolutional layer
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 5th convolutional layer
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 6th convolutional layer
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 7th convolutional layer
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
+    # 8th convolutional layer
+    model.add(Conv2D(512, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # Flattening the output
+    model.add(Flatten())
+    
+    # Fully connected layers
+    model.add(Dense(512, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+    
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
@@ -128,23 +165,12 @@ def train_and_evaluate_model(model_name, model, train_gen, val_gen):
         'F1-score': report['weighted avg']['f1-score']
     }
 
-# Models to train
-models = {
-    'VGG16': VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3)),
-    'ResNet50': ResNet50(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3)),
-    'InceptionV3': InceptionV3(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3))
-}
-
-results = []
-
-# Train and evaluate each model
-for model_name, base_model in models.items():
-    model = build_model(base_model, num_classes=len(train_generator.class_indices))
-    metrics = train_and_evaluate_model(model_name, model, train_generator, validation_generator)
-    results.append(metrics)
+# Train the custom CNN model
+custom_cnn_model = build_custom_cnn(num_classes=len(train_generator.class_indices))
+metrics = train_and_evaluate_model('Custom_CNN', custom_cnn_model, train_generator, validation_generator)
 
 # Convert results to DataFrame
-results_df = pd.DataFrame(results)
+results_df = pd.DataFrame([metrics])
 
 # Save to Excel file
 if os.path.exists(RESULTS_EXCEL):
@@ -154,3 +180,7 @@ else:
     results_df.to_excel(RESULTS_EXCEL, sheet_name='Results', index=False)
 
 print(f'Results saved to {RESULTS_EXCEL}')
+
+# Load the best model for further use
+loaded_model = load_model('Custom_CNN_best_model.h5')
+print("Model loaded successfully.")
