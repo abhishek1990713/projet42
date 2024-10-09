@@ -53,7 +53,7 @@ if __name__ == '__main__':
 import os
 import numpy as np
 import pandas as pd
-from tensorflow.keras.preprocessing import image
+from tensorflow.keras.utils import load_img, img_to_array
 from tensorflow.keras.models import load_model
 from tensorflow.keras.applications.vgg16 import preprocess_input
 
@@ -69,11 +69,11 @@ model = load_model(MODEL_PATH)
 
 # Function to predict class of a single image
 def predict_image(img_path, model):
-    # Load image
-    img = image.load_img(img_path, target_size=(IMG_SIZE, IMG_SIZE))
+    # Load image using tensorflow.keras.utils.load_img
+    img = load_img(img_path, target_size=(IMG_SIZE, IMG_SIZE))
     
     # Convert image to array
-    img_array = image.img_to_array(img)
+    img_array = img_to_array(img)
     
     # Expand dimensions to match the input shape of the model (1, IMG_SIZE, IMG_SIZE, 3)
     img_array = np.expand_dims(img_array, axis=0)
