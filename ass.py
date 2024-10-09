@@ -60,7 +60,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.metrics import classification_report, accuracy_score
 
 # Parameters
-IMG_SIZE = 224  # Input image size
+IMG_SIZE = 256  # Increased input image size
 BATCH_SIZE = 32
 EPOCHS = 10  # Adjust based on your needs
 DATA_DIR = 'data/'  # Update this with your dataset path
@@ -101,42 +101,24 @@ validation_generator = validation_datagen.flow_from_directory(
 def build_custom_cnn(num_classes):
     model = Sequential()
     
-    # 1st convolutional layer
+    # Input layer with 256x256 image size
     model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 3)))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     
-    # 2nd convolutional layer
     model.add(Conv2D(64, (3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     
-    # 3rd convolutional layer
     model.add(Conv2D(128, (3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     
-    # 4th convolutional layer
-    model.add(Conv2D(128, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    
-    # 5th convolutional layer
     model.add(Conv2D(256, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    
-    # 6th convolutional layer
-    model.add(Conv2D(256, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    
-    # 7th convolutional layer
-    model.add(Conv2D(512, (3, 3), activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-    
-    # 8th convolutional layer
-    model.add(Conv2D(512, (3, 3), activation='relu'))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    # Flattening the output
+    model.add(Conv2D(256, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    
     model.add(Flatten())
     
-    # Fully connected layers
     model.add(Dense(512, activation='relu'))
     model.add(Dropout(0.5))
     model.add(Dense(num_classes, activation='softmax'))
