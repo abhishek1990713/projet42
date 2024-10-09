@@ -66,10 +66,20 @@ EPOCHS = 10  # Adjust based on your needs
 DATA_DIR = 'data/'  # Update this with your dataset path
 RESULTS_EXCEL = 'custom_cnn_results.xlsx'
 
-# Data Preparation
-datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)  # 20% for validation
+# Data Preparation with Augmentation
+train_datagen = ImageDataGenerator(
+    rescale=1./255,              # Normalize pixel values
+    rotation_range=20,           # Randomly rotate images
+    width_shift_range=0.2,       # Randomly shift images horizontally
+    height_shift_range=0.2,      # Randomly shift images vertically
+    shear_range=0.2,             # Shear transformation
+    zoom_range=0.2,              # Randomly zoom in/out
+    horizontal_flip=True,        # Randomly flip images
+    fill_mode='nearest',         # Fill empty pixels after transformations
+    validation_split=0.2         # 20% for validation
+)
 
-train_generator = datagen.flow_from_directory(
+train_generator = train_datagen.flow_from_directory(
     DATA_DIR,
     target_size=(IMG_SIZE, IMG_SIZE),
     batch_size=BATCH_SIZE,
@@ -77,7 +87,9 @@ train_generator = datagen.flow_from_directory(
     subset='training'  # Set as training data
 )
 
-validation_generator = datagen.flow_from_directory(
+validation_datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+
+validation_generator = validation_datagen.flow_from_directory(
     DATA_DIR,
     target_size=(IMG_SIZE, IMG_SIZE),
     batch_size=BATCH_SIZE,
