@@ -50,46 +50,74 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-from tensorflow.keras.preprocessing import image
-import numpy as np
 import os
+import numpy as np
+import pandas as pd
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.models import load_model
+from tensorflow.keras.applications.vgg16 import preprocess_input
 
-# Function to load and preprocess the image
-def load_and_preprocess_image(img_path, target_size=(256, 256)):
-    img = image.load_img(img_path, target_size=target_size)
-    img_array = image.img_to_array(img) / 255.0  # Normalize the image
-    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-    return img_array
+# Parameters
+IMG_SIZE = 256  # The image size used in training
+MODEL_PATH = 'Custom_CNN_best_model.h5'  # Path to the best saved model
+TEST_FOLDER = 'path_to_test_folder/'  # Folder containing test images
+RESULTS_CSV = 'test_results.csv'  # CSV file to save results
+CLASS_LABELS = {0: 'Passport', 1: 'Driving License', 2: 'Healthcare'}  # Class labels mapping
 
-# Function to make predictions on a single image
-def predict_image(model, img_path, class_indices):
-    img_array = load_and_preprocess_image(img_path)
+# Load the saved model
+model = load_model(MODEL_PATH)
+
+# Function to predict class of a single image
+def predict_image(img_path, model):
+    # Load image
+    img = image.load_img(img_path, target_size=(IMG_SIZE, IMG_SIZE))
+    
+    # Convert image to array
+    img_array = image.img_to_array(img)
+    
+    # Expand dimensions to match the input shape of the model (1, IMG_SIZE, IMG_SIZE, 3)
+    img_array = np.expand_dims(img_array, axis=0)
+    
+    # Preprocess the image for the model (same preprocessing used during training)
+    img_array = preprocess_input(img_array)
+    
+    # Make prediction
     predictions = model.predict(img_array)
-    predicted_class_idx = np.argmax(predictions, axis=1)[0]
+    predicted_class = np.argmax(predictions, axis=1)[0]  # Get the index of the highest probability
+    predicted_label = CLASS_LABELS[predicted_class]
+    confidence = predictions[0][predicted_class]
     
-    # Reverse the class_indices dictionary to map index to class name
-    class_labels = {v: k for k, v in class_indices.items()}
+    return predicted_label, confidence
+
+# Function to test all images in a folder
+def test_images_in_folder(folder_path, model):
+    results = []
     
-    predicted_class = class_labels[predicted_class_idx]
-    return predicted_class, predictions[0]
-
-# Load the best saved model
-model_path = 'Custom_CNN_best_model.h5'
-best_model = load_model(model_path)
-print(f"Model loaded from {model_path}")
-
-# Load class indices
-class_indices = train_generator.class_indices  # Should be the same as used during training
-
-# Directory where your test images are stored
-test_images_dir = 'test_images/'  # Replace with the path to your test images directory
-
-# Loop through test images and make predictions
-for img_file in os.listdir(test_images_dir):
-    img_path = os.path.join(test_images_dir, img_file)
-    predicted_class, confidence_scores = predict_image(best_model, img_path, class_indices)
+    # Loop through all files in the folder
+    for img_file in os.listdir(folder_path):
+        # Ensure it's an image file
+        if img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
+            img_path = os.path.join(folder_path, img_file)
+            
+            # Predict the class of the image
+            predicted_label, confidence = predict_image(img_path, model)
+            
+            # Append results (image name, predicted class, confidence)
+            results.append({
+                'Image': img_file,
+                'Predicted Class': predicted_label,
+                'Confidence': confidence
+            })
     
-    print(f"Image: {img_file}")
-    print(f"Predicted Class: {predicted_class}")
-    print(f"Confidence Scores: {confidence_scores}")
-    print('---')
+    return results
+
+# Run the test
+test_results = test_images_in_folder(TEST_FOLDER, model)
+
+# Convert results to DataFrame
+df_results = pd.DataFrame(test_results)
+
+# Save results to CSV
+df_results.to_csv(RESULTS_CSV, index=False)
+
+print(f'Results saved to {RESULTS_CSV}')
