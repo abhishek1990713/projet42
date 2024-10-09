@@ -50,36 +50,107 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import numpy as np
 import os
-import tensorflow as tf
+import numpy as np
+import pandas as pd
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.applications import VGG16, ResNet50, InceptionV3
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from sklearn.metrics import classification_report, accuracy_score
 
-# Load the best weights from training
-model.load_weights('best_model.h5')
+# Parameters
+IMG_SIZE = 224  # Input image size
+BATCH_SIZE = 32
+EPOCHS = 10  # Adjust based on your needs
+DATA_DIR = 'data/'  # Update this with your dataset path
+RESULTS_EXCEL = 'model_results.xlsx'
 
-# Directory where your test images are stored
-test_dir = 'test_data/'  # Replace with your test image folder
+# Data Preparation
+datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)  # 20% for validation
 
-# Function to preprocess and predict a single image
-def predict_image(img_path, model):
-    # Load image using TensorFlow
-    img = tf.keras.utils.load_img(img_path, target_size=(224, 224))
+train_generator = datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='training'  # Set as training data
+)
+
+validation_generator = datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=(IMG_SIZE, IMG_SIZE),
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='validation'  # Set as validation data
+)
+
+# Function to build and compile model
+def build_model(base_model, num_classes):
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(num_classes, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=x)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+# Function to train and evaluate model
+def train_and_evaluate_model(model_name, model, train_gen, val_gen):
+    model_checkpoint = ModelCheckpoint(f'{model_name}_best_model.h5', monitor='val_loss', save_best_only=True, mode='min')
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+    history = model.fit(
+        train_gen,
+        validation_data=val_gen,
+        epochs=EPOCHS,
+        callbacks=[model_checkpoint, early_stopping]
+    )
+
+    # Evaluation
+    val_loss, val_accuracy = model.evaluate(val_gen)
     
-    # Preprocess image
-    img_array = tf.keras.utils.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-    img_array /= 255.0  # Rescale image (same as training)
+    # Predictions
+    val_gen.reset()
+    predictions = model.predict(val_gen)
+    predicted_classes = np.argmax(predictions, axis=1)
+    true_classes = val_gen.classes
 
-    # Make prediction
-    prediction = model.predict(img_array)
+    # Classification report
+    report = classification_report(true_classes, predicted_classes, target_names=val_gen.class_indices.keys(), output_dict=True)
     
-    # Interpret prediction (assuming binary classification)
-    if prediction[0] > 0.5:
-        print(f'{os.path.basename(img_path)}: Passport')
-    else:
-        print(f'{os.path.basename(img_path)}: Driving License')
+    return {
+        'Model': model_name,
+        'Val Loss': val_loss,
+        'Val Accuracy': val_accuracy,
+        'Precision': report['weighted avg']['precision'],
+        'Recall': report['weighted avg']['recall'],
+        'F1-score': report['weighted avg']['f1-score']
+    }
 
-# Iterate through all test images in the directory
-for img_file in os.listdir(test_dir):
-    img_path = os.path.join(test_dir, img_file)
-    predict_image(img_path, model)
+# Models to train
+models = {
+    'VGG16': VGG16(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3)),
+    'ResNet50': ResNet50(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3)),
+    'InceptionV3': InceptionV3(weights='imagenet', include_top=False, input_shape=(IMG_SIZE, IMG_SIZE, 3))
+}
+
+results = []
+
+# Train and evaluate each model
+for model_name, base_model in models.items():
+    model = build_model(base_model, num_classes=len(train_generator.class_indices))
+    metrics = train_and_evaluate_model(model_name, model, train_generator, validation_generator)
+    results.append(metrics)
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+
+# Save to Excel file
+if os.path.exists(RESULTS_EXCEL):
+    with pd.ExcelWriter(RESULTS_EXCEL, mode='a', if_sheet_exists='new') as writer:
+        results_df.to_excel(writer, sheet_name='Results', index=False)
+else:
+    results_df.to_excel(RESULTS_EXCEL, sheet_name='Results', index=False)
+
+print(f'Results saved to {RESULTS_EXCEL}')
