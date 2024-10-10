@@ -53,52 +53,56 @@ if __name__ == '__main__':
 import os
 import numpy as np
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.preprocessing import image
 import matplotlib.pyplot as plt
 
 # Step 1: Load the Best Model
 model = load_model('best_inception_v3_model.h5')
 
 # Step 2: Prepare Test Data
-test_dir = 'path/to/test_images/'  # Ensure this folder contains subfolders for classes
+test_dir = 'path/to/test_images/'  # Path to the folder containing test images
 
-# Create an ImageDataGenerator for the test images
-test_datagen = ImageDataGenerator(rescale=1.0/255)  # Normalize pixel values
+# Step 3: Get Class Labels
+class_indices = {0: 'cheques', 1: 'deposit', 2: 'driving license', 3: 'fund transfer', 4: 'passport', 5: 'residence certificate'}
+class_labels = list(class_indices.values())
 
-# Load test data from the folder
-test_generator = test_datagen.flow_from_directory(
-    test_dir,
-    target_size=(299, 299),  # InceptionV3 requires 299x299 images
-    batch_size=1,
-    class_mode=None,  # No labels needed
-    shuffle=False  # Keep the order of the images
-)
+# Step 4: Load and Preprocess Images for Prediction
+def load_and_preprocess_images(test_dir):
+    images = []
+    filenames = []
+    
+    # Loop through all files in the test directory
+    for filename in os.listdir(test_dir):
+        if filename.endswith('.jpg') or filename.endswith('.png'):  # Ensure the file is an image
+            img_path = os.path.join(test_dir, filename)
+            img = image.load_img(img_path, target_size=(299, 299))  # Load image with the target size
+            img_array = image.img_to_array(img)  # Convert image to array
+            img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+            img_array /= 255.0  # Normalize pixel values
+            images.append(img_array)  # Append to list
+            filenames.append(filename)  # Keep track of the filename
+    
+    return np.vstack(images), filenames  # Stack images into a single array
 
-# Check the number of test samples
-print(f"Number of test samples: {test_generator.samples}")
+# Load and preprocess the images
+test_images, test_filenames = load_and_preprocess_images(test_dir)
 
-# Step 3: Make Predictions
-if test_generator.samples > 0:  # Ensure there are samples to predict
-    predictions = model.predict(test_generator)
+# Step 5: Make Predictions
+predictions = model.predict(test_images)
 
-    # Step 4: Get Predicted Classes
-    predicted_classes = np.argmax(predictions, axis=1)
+# Step 6: Get Predicted Classes
+predicted_classes = np.argmax(predictions, axis=1)
 
-    # Print predicted classes
-    print("Predicted Classes:")
-    print(predicted_classes)
+# Print the predicted classes with filenames
+print("Predictions:")
+for filename, predicted_class in zip(test_filenames, predicted_classes):
+    print(f'{filename}: Predicted Class: {class_labels[predicted_class]}')
 
-    # Step 5: Display Results
-    class_indices = test_generator.class_indices
-    class_labels = list(class_indices.keys())
-    print("Class Labels:", class_labels)
-
-    # Display each image with its predicted class
-    for i in range(len(predicted_classes)):
-        img = test_generator[i][0]  # Get the image
-        plt.imshow(img)  # Display the image
-        plt.title(f'Predicted: {class_labels[predicted_classes[i]]}')
-        plt.axis('off')  # Hide axes
-        plt.show()
-else:
-    print("No test samples found.")
+# Step 7: Display Results
+for i, filename in enumerate(test_filenames):
+    img_path = os.path.join(test_dir, filename)
+    img = image.load_img(img_path)  # Load the original image for display
+    plt.imshow(img)  # Display the image
+    plt.title(f'Predicted: {class_labels[predicted_classes[i]]}')
+    plt.axis('off')  # Hide axes
+    plt.show()
