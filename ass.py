@@ -50,22 +50,6 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
- import os
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import InceptionV3
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from sklearn.metrics import classification_report, confusion_matrix
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Step 1: Load Data from a Single Folder
-# Define the path to the dataset folder (which contains subfolders for each class)
-dataset_dir = 'path/to/dataset/'
-
-# Create an ImageDataGenerator for training and validation, with a 20% split for validation
 import os
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import InceptionV3
@@ -112,6 +96,10 @@ validation_generator = datagen.flow_from_directory(
     subset='validation'  # Set as validation data
 )
 
+# Print class indices
+print("Class Indices:")
+print(train_generator.class_indices)
+
 # Step 2: Build the InceptionV3 Model
 
 # Load the InceptionV3 model without the top layer (include_top=False)
@@ -127,7 +115,7 @@ model = Sequential([
     Dropout(0.5),  # Add dropout to prevent overfitting
     Dense(256, activation='relu'),  # Fully connected layer
     Dropout(0.5),  # Add another dropout
-    Dense(6, activation='softmax')  # Output layer for 6 classes
+    Dense(len(train_generator.class_indices), activation='softmax')  # Output layer for number of classes
 ])
 
 # Step 3: Compile the Model with Multiple Metrics
