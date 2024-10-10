@@ -49,11 +49,11 @@ def Upload():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    #app.run(host='0.0.0.0', port=6000, debug=True)
+
 import os
 import numpy as np
+import cv2  # Import OpenCV
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
 import matplotlib.pyplot as plt
 
 # Step 1: Load the Best Model
@@ -75,14 +75,13 @@ def load_and_preprocess_images(test_dir):
     for filename in os.listdir(test_dir):
         if filename.endswith('.jpg') or filename.endswith('.png'):  # Ensure the file is an image
             img_path = os.path.join(test_dir, filename)
-            img = image.load_img(img_path, target_size=(299, 299))  # Load image with the target size
-            img_array = image.img_to_array(img)  # Convert image to array
-            img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-            img_array /= 255.0  # Normalize pixel values
+            img = cv2.imread(img_path)  # Load the image using OpenCV
+            img = cv2.resize(img, (299, 299))  # Resize to target size
+            img_array = img.astype('float32') / 255.0  # Normalize pixel values
             images.append(img_array)  # Append to list
             filenames.append(filename)  # Keep track of the filename
     
-    return np.vstack(images), filenames  # Stack images into a single array
+    return np.array(images), filenames  # Convert to numpy array
 
 # Load and preprocess the images
 test_images, test_filenames = load_and_preprocess_images(test_dir)
@@ -101,7 +100,8 @@ for filename, predicted_class in zip(test_filenames, predicted_classes):
 # Step 7: Display Results
 for i, filename in enumerate(test_filenames):
     img_path = os.path.join(test_dir, filename)
-    img = image.load_img(img_path)  # Load the original image for display
+    img = cv2.imread(img_path)  # Load the original image for display
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert from BGR to RGB format
     plt.imshow(img)  # Display the image
     plt.title(f'Predicted: {class_labels[predicted_classes[i]]}')
     plt.axis('off')  # Hide axes
