@@ -60,8 +60,7 @@ import matplotlib.pyplot as plt
 model = load_model('best_inception_v3_model.h5')
 
 # Step 2: Prepare Test Data
-# Define the path to the test images directory
-test_dir = 'path/to/test_images/'  # Make sure to have your test images here
+test_dir = 'path/to/test_images/'  # Ensure this folder contains subfolders for classes
 
 # Create an ImageDataGenerator for the test images
 test_datagen = ImageDataGenerator(rescale=1.0/255)  # Normalize pixel values
@@ -75,25 +74,31 @@ test_generator = test_datagen.flow_from_directory(
     shuffle=False  # Keep the order of the images
 )
 
+# Check the number of test samples
+print(f"Number of test samples: {test_generator.samples}")
+
 # Step 3: Make Predictions
-predictions = model.predict(test_generator)
+if test_generator.samples > 0:  # Ensure there are samples to predict
+    predictions = model.predict(test_generator)
 
-# Step 4: Get Predicted Classes
-predicted_classes = np.argmax(predictions, axis=1)
+    # Step 4: Get Predicted Classes
+    predicted_classes = np.argmax(predictions, axis=1)
 
-# Print predicted classes
-print("Predicted Classes:")
-print(predicted_classes)
+    # Print predicted classes
+    print("Predicted Classes:")
+    print(predicted_classes)
 
-# Step 5: Display Results
-# Get class indices from the training generator
-class_indices = test_generator.class_indices
-class_labels = list(class_indices.keys())
-print("Class Labels:", class_labels)
+    # Step 5: Display Results
+    class_indices = test_generator.class_indices
+    class_labels = list(class_indices.keys())
+    print("Class Labels:", class_labels)
 
-# Display each image with its predicted class
-for i in range(len(predicted_classes)):
-    plt.imshow(test_generator[i][0])  # Display the image
-    plt.title(f'Predicted: {class_labels[predicted_classes[i]]}')
-    plt.axis('off')  # Hide axes
-    plt.show()
+    # Display each image with its predicted class
+    for i in range(len(predicted_classes)):
+        img = test_generator[i][0]  # Get the image
+        plt.imshow(img)  # Display the image
+        plt.title(f'Predicted: {class_labels[predicted_classes[i]]}')
+        plt.axis('off')  # Hide axes
+        plt.show()
+else:
+    print("No test samples found.")
