@@ -66,6 +66,22 @@ import matplotlib.pyplot as plt
 dataset_dir = 'path/to/dataset/'
 
 # Create an ImageDataGenerator for training and validation, with a 20% split for validation
+import os
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import InceptionV3
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from sklearn.metrics import classification_report, confusion_matrix
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Step 1: Load Data from a Single Folder
+# Define the path to the dataset folder (which contains subfolders for each class)
+dataset_dir = 'path/to/dataset/'
+
+# Create an ImageDataGenerator for training and validation, with a 20% split for validation
 datagen = ImageDataGenerator(
     rescale=1.0/255,  # Normalize pixel values
     validation_split=0.2,  # Split the data into 80% training and 20% validation
@@ -81,7 +97,7 @@ datagen = ImageDataGenerator(
 # Load training data from the folder
 train_generator = datagen.flow_from_directory(
     dataset_dir,
-    target_size=(224, 224),  # InceptionV3 requires 224x224 images now
+    target_size=(299, 299),  # InceptionV3 requires 299x299 images
     batch_size=32,
     class_mode='categorical',
     subset='training'  # Set as training data
@@ -90,7 +106,7 @@ train_generator = datagen.flow_from_directory(
 # Load validation data from the folder
 validation_generator = datagen.flow_from_directory(
     dataset_dir,
-    target_size=(224, 224),  # Change here to 224x224
+    target_size=(299, 299),
     batch_size=32,
     class_mode='categorical',
     subset='validation'  # Set as validation data
@@ -99,7 +115,7 @@ validation_generator = datagen.flow_from_directory(
 # Step 2: Build the InceptionV3 Model
 
 # Load the InceptionV3 model without the top layer (include_top=False)
-base_model = InceptionV3(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model = InceptionV3(weights='imagenet', include_top=False, input_shape=(299, 299, 3))
 
 # Freeze the base model
 base_model.trainable = False
@@ -172,4 +188,3 @@ def get_classification_report(generator):
 
 # Generate classification report on validation data
 get_classification_report(validation_generator)
-
