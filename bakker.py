@@ -89,3 +89,32 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
+
+import os
+import shutil
+
+# Define the input and output folder paths
+input_folder = 'path_to_input_folder'  # Replace with your input folder path
+output_folder = 'path_to_output_folder'  # Replace with your output folder path
+
+# Create the output folder if it doesn't exist
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+
+# Get a list of all files in the input folder
+files = os.listdir(input_folder)
+
+# Filter only image files (you can add more extensions if needed)
+image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+images = [f for f in files if any(f.lower().endswith(ext) for ext in image_extensions)]
+
+# Rename and save the images in the output folder
+for idx, image in enumerate(images, start=1):
+    input_image_path = os.path.join(input_folder, image)
+    new_image_name = f'awb_{idx}{os.path.splitext(image)[1]}'  # Keep the original file extension
+    output_image_path = os.path.join(output_folder, new_image_name)
+    
+    # Copy and rename the file to the output folder
+    shutil.copy(input_image_path, output_image_path)
+
+print("Images renamed and saved successfully.")
