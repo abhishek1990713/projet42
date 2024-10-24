@@ -90,32 +90,6 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-import uvicorn
-import ssl
-from configobj import ConfigObj  # Correct spelling: ConfigObj, not Configobj
-
-from constant import CONFIG_FILE, PARAMETER, THREADS, LOCAL_HOST, LOG_LEVEL, MAIN_APP, PORT_NO
-
-# Load the configuration
-config = ConfigObj(CONFIG_FILE)
-
-# Extract necessary parameters
-threads = int(config[PARAMETER][THREADS])
-port_no = int(config[PARAMETER][PORT_NO])
-
-# Import SSL context and other security-related settings
-from fast import context, ssl_cert_path, ssl_key_path_encrypted, decrypted_password
-
-if __name__ == "__main__":
-    # Run the FastAPI app with SSL configurations
-    uvicorn.run(
-        MAIN_APP, 
-        host=LOCAL_HOST, 
-        port=port_no, 
-        workers=threads, 
-        log_level=LOG_LEVEL,
-        ssl_keyfile=ssl_key_path_encrypted,  # Ensure this path is correct
-        ssl_certfile=ssl_cert_path,  # Ensure this path is correct
-        ssl_keyfile_password=decrypted_password,  # This should contain the decrypted password
-        ssl_cert_reqs=ssl.CERT_REQUIRED  # Optional, depends on your SSL cert requirements
-    )
+print(f"SSL Key Path: {ssl_key_path_encrypted}")
+print(f"SSL Cert Path: {ssl_cert_path}")
+print(f"Decrypted Password: {decrypted_password}")
