@@ -90,31 +90,32 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-import os
-import shutil
+import uvicorn
+import ssl
+from configobj import ConfigObj  # Correct spelling: ConfigObj, not Configobj
 
-# Define the input and output folder paths
-input_folder = 'path_to_input_folder'  # Replace with your input folder path
-output_folder = 'path_to_output_folder'  # Replace with your output folder path
+from constant import CONFIG_FILE, PARAMETER, THREADS, LOCAL_HOST, LOG_LEVEL, MAIN_APP, PORT_NO
 
-# Create the output folder if it doesn't exist
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
+# Load the configuration
+config = ConfigObj(CONFIG_FILE)
 
-# Get a list of all files in the input folder
-files = os.listdir(input_folder)
+# Extract necessary parameters
+threads = int(config[PARAMETER][THREADS])
+port_no = int(config[PARAMETER][PORT_NO])
 
-# Filter only image files (you can add more extensions if needed)
-image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
-images = [f for f in files if any(f.lower().endswith(ext) for ext in image_extensions)]
+# Import SSL context and other security-related settings
+from fast import context, ssl_cert_path, ssl_key_path_encrypted, decrypted_password
 
-# Rename and save the images in the output folder
-for idx, image in enumerate(images, start=1):
-    input_image_path = os.path.join(input_folder, image)
-    new_image_name = f'awb_{idx}{os.path.splitext(image)[1]}'  # Keep the original file extension
-    output_image_path = os.path.join(output_folder, new_image_name)
-    
-    # Copy and rename the file to the output folder
-    shutil.copy(input_image_path, output_image_path)
-
-print("Images renamed and saved successfully.")
+if __name__ == "__main__":
+    # Run the FastAPI app with SSL configurations
+    uvicorn.run(
+        MAIN_APP, 
+        host=LOCAL_HOST, 
+        port=port_no, 
+        workers=threads, 
+        log_level=LOG_LEVEL,
+        ssl_keyfile=ssl_key_path_encrypted,  # Ensure this path is correct
+        ssl_certfile=ssl_cert_path,  # Ensure this path is correct
+        ssl_keyfile_password=decrypted_password,  # This should contain the decrypted password
+        ssl_cert_reqs=ssl.CERT_REQUIRED  # Optional, depends on your SSL cert requirements
+    )
