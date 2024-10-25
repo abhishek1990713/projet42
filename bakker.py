@@ -90,54 +90,45 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 from pathlib import Path
 from PIL import Image
 import io
 import asyncio
 import base64
 import os
-import ssl
 import sys
 import logging
 from utility import doc_to_ocr
 from constant import *
 from configobj import ConfigObj
-from cryptography.fernet import Fernet
 from setup_log import setup_logger
 from datetime import datetime
 
 # Initialize the Flask app
 app = Flask(__name__)
 
+# Allowed URL for requests
+ALLOWED_URL = "https://allowed-url.com"  # Replace with your specific allowed URL
+
 # Load configuration
 config = ConfigObj("CONFIG_FILE_PATH")  # Replace with your actual config file path
 language = config['PARAMETER']['LANGUAGE_CODE']
 timeout = int(config['PARAMETER']['TIMEOUT'])
 end_point = config['PARAMETER']['ENDPOINT']
-enc_key_config = config['CERT_STRING']['ENC_KEY']
-enc_cert_pass_config = config['CERT_STRING']['ENC_CERT_PASS'].encode('utf-8')
-
-# Setup SSL context
-ssl_cert_path = "CERT_PATH"  # Replace with actual path
-ssl_key_path_encrypted = "PRIVATE_KEY_PATH"  # Replace with actual path
-with open(ssl_cert_path, 'rb') as cert_file:
-    certificate = cert_file.read()
-with open(ssl_key_path_encrypted, 'rb') as key_file:
-    encrypted_key = key_file.read()
-
-cipher_suite = Fernet(enc_key_config)
-decrypted_password = cipher_suite.decrypt(enc_cert_pass_config).decode('utf-8')
-
-context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-context.load_cert_chain(certfile=ssl_cert_path, keyfile=ssl_key_path_encrypted, password=decrypted_password)
-context.verify_mode = ssl.CERT_REQUIRED
 
 # Set up logging
 try:
     logger = setup_logger()
 except Exception as e:
     print("LOG SETUP ERROR:", e)
+
+# Middleware to restrict access to a specific URL
+@app.before_request
+def restrict_to_allowed_url():
+    referer = request.headers.get("Referer")
+    if referer != ALLOWED_URL:
+        abort(403)  # Forbidden if the request is not from the allowed URL
 
 @app.route("/endpoint", methods=['POST'])  # Replace "/endpoint" with your actual endpoint path
 def get_file_and_data():
@@ -201,6 +192,6 @@ def get_file_and_data():
         logger.exception(f"Error in API function: {e}")
         return jsonify({"ERROR_KEY": "PARAMETER_ERROR", "REMARK": str(e)})
 
-# Run the Flask app with SSL
+# Run the Flask app
 if __name__ == "__main__":
-    app.run(ssl_context=(ssl_cert_path, ssl_key_path_encrypted), port=5000, debug=True)
+    app.run(port=5000, debug=True)  # Change the port as needed
