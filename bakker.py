@@ -90,9 +90,8 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-from fastapi import FastAPI, File, Form, UploadFile
+from flask import Flask, request, jsonify
 from pathlib import Path
-from typing import Annotated
 from PIL import Image
 import io
 import asyncio
@@ -108,8 +107,8 @@ from cryptography.fernet import Fernet
 from setup_log import setup_logger
 from datetime import datetime
 
-# Initialize the FastAPI app
-app = FastAPI()
+# Initialize the Flask app
+app = Flask(__name__)
 
 # Load configuration
 config = ConfigObj("CONFIG_FILE_PATH")  # Replace with your actual config file path
@@ -140,12 +139,8 @@ try:
 except Exception as e:
     print("LOG SETUP ERROR:", e)
 
-@app.post("/endpoint")  # Replace "/endpoint" with your actual endpoint path
-async def get_file_and_data(
-    file: UploadFile = File(...),
-    refNo: str = Form(...),
-    lang: str = Form('')
-):
+@app.route("/endpoint", methods=['POST'])  # Replace "/endpoint" with your actual endpoint path
+def get_file_and_data():
     """
     API method to read file, reference number, and language parameter from the request form.
     file --> actual image file for OCR
@@ -154,17 +149,25 @@ async def get_file_and_data(
     """
     logger.info("API CALLED")
     
+    # Get the file and form data
+    try:
+        file = request.files['file']
+        refNo = request.form['refNo']
+        lang = request.form.get('lang', '')
+    except KeyError:
+        return jsonify({"ERROR_KEY": "MISSING_PARAMETERS"}), 400
+    
     # Print request details
     try:
         print(file.filename, refNo, lang)
         logger.info(f"Processing file: {file.filename}, refNo: {refNo}")
     except Exception as e:
         logger.info("LOG REF ERROR")
-        return {"ERROR_KEY": "LOG_REF_ERROR"}
+        return jsonify({"ERROR_KEY": "LOG_REF_ERROR"})
     
     # Check if refNo is valid
     if refNo in (None, '', 'EDGSTR'):
-        return {"ERROR_KEY": "LOG_REF_ERROR"}
+        return jsonify({"ERROR_KEY": "LOG_REF_ERROR"})
 
     # Prepare file path
     current_directory = os.getcwd()
@@ -173,8 +176,7 @@ async def get_file_and_data(
     new_path = os.path.join(input_path, file.filename)
     
     # Save the uploaded file
-    with open(new_path, 'wb') as file_object:
-        file_object.write(await file.read())
+    file.save(new_path)
 
     # Determine the language for OCR
     if not lang:
@@ -187,14 +189,18 @@ async def get_file_and_data(
         # Remove the file after processing
         os.remove(new_path)
         
-        return {
+        return jsonify({
             "OCRRESULT": ocr_result,
             "NOOFPAGES": page_no,
             "REFNO": refNo
-        }
+        })
     except OSError as error:
         logger.exception(f"Input error: {error}")
-        return {"ERROR_KEY": "INPUT_ERROR"}
+        return jsonify({"ERROR_KEY": "INPUT_ERROR"})
     except Exception as e:
         logger.exception(f"Error in API function: {e}")
-        return {"ERROR_KEY": "PARAMETER_ERROR", "REMARK": str(e)}
+        return jsonify({"ERROR_KEY": "PARAMETER_ERROR", "REMARK": str(e)})
+
+# Run the Flask app with SSL
+if __name__ == "__main__":
+    app.run(ssl_context=(ssl_cert_path, ssl_key_path_encrypted), port=5000, debug=True)
