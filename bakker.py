@@ -93,18 +93,29 @@ from fastapi import FastAPI
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 import asyncio
+import ssl
 
 # Initialize FastAPI app
 app = FastAPI()
 
+# Define a sample route
+@app.get("/")
+async def read_root():
+    return {"message": "Hello, World! Securely!"}
+
 # Hypercorn Configuration
 config = Config()
-config.bind = ["0.0.0.0:PORT_NO"]  # Replace PORT_NO with your desired port
-config.certfile = "path/to/your_certificate.pfx"  # Path to your PFX file
-config.keyfile_password = "your_password"  # Password for the PFX file
+config.bind = ["0.0.0.0:8000"]  # Replace with your desired IP and port
+
+# Create SSL context
+ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+ssl_context.load_cert_chain(certfile="path/to/your_certificate.pfx", password="your_password")  # Use the path to your PFX file and its password
+
+# Optionally, specify the TLS version
+ssl_context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1  # Disable TLS 1.0 and 1.1
+ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2  # Ensure at least TLS 1.2 is used
 
 # Run Hypercorn with the configured SSL
 if __name__ == "__main__":
     print("Starting API with SSL...")
-    asyncio.run(serve(app, config))
-
+    asyncio.run(serve(app, config, ssl=ssl_context))
