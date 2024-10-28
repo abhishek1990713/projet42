@@ -89,114 +89,22 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-from flask import Flask, request, jsonify
-from pathlib import Path
-from PIL import Image
-import io
+from fastapi import FastAPI
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
 import asyncio
-import base64
-from utility import doc_to_ocr  # Import your OCR function
-import os
-import sys
-from configobj import ConfigObj
-from cryptography.fernet import Fernet
-import logging
-from datetime import datetime
-import ssl  # For SSL context
 
-# Setup the Flask app
-app = Flask(__name__)
+# Initialize FastAPI app
+app = FastAPI()
 
-# Load constants and configuration
-try:
-    from constant import *  # Import any project constants
-    config = ConfigObj('config.ini')  # Ensure config.ini is correctly set
-except Exception as e:
-    print(f"Configuration Error: {e}")
-    sys.exit(1)  # Exit if the configuration can't be loaded
+# Hypercorn Configuration
+config = Config()
+config.bind = ["0.0.0.0:PORT_NO"]  # Replace PORT_NO with your desired port
+config.certfile = "path/to/your_certificate.pfx"  # Path to your PFX file
+config.keyfile_password = "your_password"  # Password for the PFX file
 
-# Initialize logging
-try:
-    from setup_log import setup_logger
-    logger = setup_logger()
-except Exception as e:
-    print(f"Log Setup Error: {e}")
-    logger = None  # Log setup failed, set logger to None
-
-# Load encryption key and certificate configurations
-try:
-    ssl_key_path_encrypted = config['CERT_STRING'].get('SSL_KEY_ENC', 'path/to/ssl_key_enc')
-    ssl_cert_path = config['CERT_STRING'].get('SSL_CERT', 'path/to/cert')
-    enc_key_config = config['CERT_STRING']['ENC_KEY']
-    enc_cert_pass_config = config['CERT_STRING']['ENC_CERT_PASS'].encode("utf-8")
-
-    # Decrypt the certificate password
-    cipher_suite = Fernet(enc_key_config)
-    decrypted_password = cipher_suite.decrypt(enc_cert_pass_config).decode("utf-8")
-except KeyError as e:
-    print(f"Missing configuration key: {e}")
-    sys.exit(1)
-
-@app.route('/tmp_python_ocr_ref', methods=['POST'])
-def process_file_to_ocr():
-    """Process uploaded file with OCR."""
-    if not logger:
-        return jsonify({"ERROR_KEY": "Logger not initialized"}), 500
-
-    try:
-        # Log API call
-        logger.info("OCR API called")
-
-        # Get file, language, and reference number from request
-        file = request.files.get('file')
-        refNo = request.form.get('refNo')
-        lang = request.form.get('lang', config['PARAMETER'].get('LANGUAGE_CODE'))
-
-        # Validate required fields
-        if not file or not refNo:
-            return jsonify({"ERROR_KEY": "109 REFERBOR"})
-
-        # Define file storage path
-        current_directory = os.getcwd()
-        input_path = os.path.join(current_directory, "input_path")
-        os.makedirs(input_path, exist_ok=True)
-
-        # Save file for OCR processing
-        file_path = os.path.join(input_path, file.filename)
-        file.save(file_path)
-
-        # Run OCR
-        timeout = int(config['PARAMETER'].get('TIMEOUT', 30))
-        ocr_result, pg_no = doc_to_ocr(file_path, lang, refNo, timeout)
-
-        # Clean up saved file
-        os.remove(file_path)
-
-        # Return OCR results
-        return jsonify({
-            "OCRRESULT": ocr_result,
-            "NOOFPAGES": pg_no,
-            "REFNO": refNo
-        })
-
-    except OSError as error:
-        logger.exception("File processing error")
-        return jsonify({"ERROR_KEY": "INPUT_ERROR"}), 500
-    except Exception as e:
-        logger.exception("API function error")
-        return jsonify({"REMARK": str(e), "ERROR_KEY": "PARAMETER_ERROR"}), 500
-
-if __name__ == '__main__':
-    # SSL context setup
-    try:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(certfile=ssl_cert_path, keyfile=ssl_key_path_encrypted, password=decrypted_password)
-        context.verify_mode = ssl.CERT_REQUIRED
-        context.load_verify_locations(cafile=ssl_cert_path)
-
-        # Run the app
-        app.run(host="0.0.0.0", port=8888, ssl_context=context, threaded=True, debug=True)
-    except Exception as e:
-        print(f"SSL Context Error: {e}")
-        sys.exit(1)
+# Run Hypercorn with the configured SSL
+if __name__ == "__main__":
+    print("Starting API with SSL...")
+    asyncio.run(serve(app, config))
 
