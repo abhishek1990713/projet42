@@ -89,109 +89,114 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify
 from pathlib import Path
 from PIL import Image
 import io
 import asyncio
 import base64
+from utility import doc_to_ocr  # Import your OCR function
 import os
 import sys
-import logging
-from utility import doc_to_ocr
-from constant import *
 from configobj import ConfigObj
-from setup_log import setup_logger
+from cryptography.fernet import Fernet
+import logging
 from datetime import datetime
+import ssl  # For SSL context
 
-# Initialize the Flask app
+# Setup the Flask app
 app = Flask(__name__)
 
-# Allowed URL for requests
-ALLOWED_URL = "https://allowed-url.com"  # Replace with your specific allowed URL
-
-# Load configuration
-config = ConfigObj("CONFIG_FILE_PATH")  # Replace with your actual config file path
-language = config['PARAMETER']['LANGUAGE_CODE']
-timeout = int(config['PARAMETER']['TIMEOUT'])
-end_point = config['PARAMETER']['ENDPOINT']
-
-# Set up logging
+# Load constants and configuration
 try:
+    from constant import *  # Import any project constants
+    config = ConfigObj('config.ini')  # Ensure config.ini is correctly set
+except Exception as e:
+    print(f"Configuration Error: {e}")
+    sys.exit(1)  # Exit if the configuration can't be loaded
+
+# Initialize logging
+try:
+    from setup_log import setup_logger
     logger = setup_logger()
 except Exception as e:
-    print("LOG SETUP ERROR:", e)
+    print(f"Log Setup Error: {e}")
+    logger = None  # Log setup failed, set logger to None
 
-# Middleware to restrict access to a specific URL
-@app.before_request
-def restrict_to_allowed_url():
-    referer = request.headers.get("Referer")
-    if referer != ALLOWED_URL:
-        abort(403)  # Forbidden if the request is not from the allowed URL
+# Load encryption key and certificate configurations
+try:
+    ssl_key_path_encrypted = config['CERT_STRING'].get('SSL_KEY_ENC', 'path/to/ssl_key_enc')
+    ssl_cert_path = config['CERT_STRING'].get('SSL_CERT', 'path/to/cert')
+    enc_key_config = config['CERT_STRING']['ENC_KEY']
+    enc_cert_pass_config = config['CERT_STRING']['ENC_CERT_PASS'].encode("utf-8")
 
-@app.route("/endpoint", methods=['POST'])  # Replace "/endpoint" with your actual endpoint path
-def get_file_and_data():
-    """
-    API method to read file, reference number, and language parameter from the request form.
-    file --> actual image file for OCR
-    refNo --> unique number for given file
-    lang --> language parameter for OCR, default is taken from config file if not provided
-    """
-    logger.info("API CALLED")
-    
-    # Get the file and form data
+    # Decrypt the certificate password
+    cipher_suite = Fernet(enc_key_config)
+    decrypted_password = cipher_suite.decrypt(enc_cert_pass_config).decode("utf-8")
+except KeyError as e:
+    print(f"Missing configuration key: {e}")
+    sys.exit(1)
+
+@app.route('/tmp_python_ocr_ref', methods=['POST'])
+def process_file_to_ocr():
+    """Process uploaded file with OCR."""
+    if not logger:
+        return jsonify({"ERROR_KEY": "Logger not initialized"}), 500
+
     try:
-        file = request.files['file']
-        refNo = request.form['refNo']
-        lang = request.form.get('lang', '')
-    except KeyError:
-        return jsonify({"ERROR_KEY": "MISSING_PARAMETERS"}), 400
-    
-    # Print request details
-    try:
-        print(file.filename, refNo, lang)
-        logger.info(f"Processing file: {file.filename}, refNo: {refNo}")
-    except Exception as e:
-        logger.info("LOG REF ERROR")
-        return jsonify({"ERROR_KEY": "LOG_REF_ERROR"})
-    
-    # Check if refNo is valid
-    if refNo in (None, '', 'EDGSTR'):
-        return jsonify({"ERROR_KEY": "LOG_REF_ERROR"})
+        # Log API call
+        logger.info("OCR API called")
 
-    # Prepare file path
-    current_directory = os.getcwd()
-    input_path = os.path.join(current_directory, "INPUT_PATH")  # Replace with actual input path
-    os.makedirs(input_path, exist_ok=True)
-    new_path = os.path.join(input_path, file.filename)
-    
-    # Save the uploaded file
-    file.save(new_path)
+        # Get file, language, and reference number from request
+        file = request.files.get('file')
+        refNo = request.form.get('refNo')
+        lang = request.form.get('lang', config['PARAMETER'].get('LANGUAGE_CODE'))
 
-    # Determine the language for OCR
-    if not lang:
-        lang = language
-    
-    try:
-        # Call OCR processing function
-        ocr_result, page_no = doc_to_ocr(new_path, lang, refNo, timeout)
-        
-        # Remove the file after processing
-        os.remove(new_path)
-        
+        # Validate required fields
+        if not file or not refNo:
+            return jsonify({"ERROR_KEY": "109 REFERBOR"})
+
+        # Define file storage path
+        current_directory = os.getcwd()
+        input_path = os.path.join(current_directory, "input_path")
+        os.makedirs(input_path, exist_ok=True)
+
+        # Save file for OCR processing
+        file_path = os.path.join(input_path, file.filename)
+        file.save(file_path)
+
+        # Run OCR
+        timeout = int(config['PARAMETER'].get('TIMEOUT', 30))
+        ocr_result, pg_no = doc_to_ocr(file_path, lang, refNo, timeout)
+
+        # Clean up saved file
+        os.remove(file_path)
+
+        # Return OCR results
         return jsonify({
             "OCRRESULT": ocr_result,
-            "NOOFPAGES": page_no,
+            "NOOFPAGES": pg_no,
             "REFNO": refNo
         })
-    except OSError as error:
-        logger.exception(f"Input error: {error}")
-        return jsonify({"ERROR_KEY": "INPUT_ERROR"})
-    except Exception as e:
-        logger.exception(f"Error in API function: {e}")
-        return jsonify({"ERROR_KEY": "PARAMETER_ERROR", "REMARK": str(e)})
 
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(port=5000, debug=True)  # Change the port as needed
+    except OSError as error:
+        logger.exception("File processing error")
+        return jsonify({"ERROR_KEY": "INPUT_ERROR"}), 500
+    except Exception as e:
+        logger.exception("API function error")
+        return jsonify({"REMARK": str(e), "ERROR_KEY": "PARAMETER_ERROR"}), 500
+
+if __name__ == '__main__':
+    # SSL context setup
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=ssl_cert_path, keyfile=ssl_key_path_encrypted, password=decrypted_password)
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations(cafile=ssl_cert_path)
+
+        # Run the app
+        app.run(host="0.0.0.0", port=8888, ssl_context=context, threaded=True, debug=True)
+    except Exception as e:
+        print(f"SSL Context Error: {e}")
+        sys.exit(1)
+
