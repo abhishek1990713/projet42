@@ -89,5 +89,47 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-ssl_context.load_cert_chain(certfile="certificate.pem", keyfile="private_key.pem"
+import uvicorn
+import ssl
+import os
+from configobj import ConfigObj
+from constant import CONFIG_FILE, PARAMETER, THREADS, LOCAL_HOST, LOG_LEVEL, MAIN_APP, PORT_NO
+from fast import app  # Import your FastAPI app here
+
+# Load configuration
+config = ConfigObj(CONFIG_FILE)
+threads = int(config[PARAMETER][THREADS])
+port_no = int(config[PARAMETER][PORT_NO])
+
+# Define paths for certificates
+server_crt_path = "path/to/certificate.cer"
+server_key_path = "path/to/private_key.key"
+ca_crt_path = "path/to/ca_certificate.cer"
+
+def get_ssl_context(server_crt_path=server_crt_path, server_key_path=server_key_path, ca_crt_path=ca_crt_path):
+    ssl_context = ssl.SSLContext(protocol=ssl.PROTOCOL_TLSv1_2)
+    ssl_context.verify_mode = ssl.CERT_NONE  # Change to CERT_REQUIRED or CERT_OPTIONAL as needed
+    ssl_context.check_hostname = False
+    ssl_context.load_verify_locations(ca_crt_path)
+    ssl_context.load_cert_chain(certfile=server_crt_path, keyfile=server_key_path)
+    return ssl_context
+
+if __name__ == "__main__":
+    print("MANUAL CHECK!")
+
+    # Set up SSL context
+    ssl_context = get_ssl_context()
+    
+    # Run Uvicorn with SSL configuration
+    uvicorn.run(
+        "fast:app",
+        host=LOCAL_HOST,
+        port=port_no,
+        workers=threads,
+        log_level=LOG_LEVEL,
+        ssl_keyfile=server_key_path,
+        ssl_certfile=server_crt_path,
+        ssl_keyfile_password=None,  # Add password if the key is encrypted
+        ssl_cert_reqs=ssl.CERT_REQUIRED,
+        ssl_ca_certs=ca_crt_path  # Added for CA certificate verification
+    )
