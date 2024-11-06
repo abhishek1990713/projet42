@@ -89,45 +89,52 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import ssl
+
+
+
+from paddleocr import PPStructure, draw_structure_result
+from PIL import Image
 import os
-from flask import Flask
-from configobj import ConfigObj
-from constant import CONFIG_FILE, PARAMETER, THREADS, LOCAL_HOST, LOG_LEVEL, PORT_NO
 
-app = Flask(__name__)
+# Set paths to the pre-downloaded models
+detection_model_dir = r'C:\path\to\local\en_PP-OCRv3_det_infer'  # Detection model path
+layout_model_dir = r'C:\path\to\local\ppyolov2_r50vd_dcn_365e_voc'  # Layout model path
 
-# Load configuration
-config = ConfigObj(CONFIG_FILE)
-threads = int(config[PARAMETER][THREADS])
-port_no = int(config[PARAMETER][PORT_NO])
+# Initialize PPStructure with local model paths for offline layout analysis
+layout_engine = PPStructure(
+    show_log=True,
+    det_model_dir=detection_model_dir,  # Set detection model directory
+    structure_model_dir=layout_model_dir,  # Set layout model directory
+    use_angle_cls=True,  # Angle classification if needed
+    lang='en'  # Language option
+)
 
-# Define paths for certificates
-server_crt_path = "path/to/certificate.cer"
-server_key_path = "path/to/private_key.key"
-ca_crt_path = "path/to/ca_certificate.cer"
+# Set the image path
+image_path = r'C:\path\to\your\image.jpg'
 
-def get_ssl_context(server_crt_path=server_crt_path, server_key_path=server_key_path, ca_crt_path=ca_crt_path):
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-    ssl_context.verify_mode = ssl.CERT_REQUIRED  # Set to CERT_NONE if client verification is not needed
-    ssl_context.check_hostname = False
-    ssl_context.load_verify_locations(ca_crt_path)
-    ssl_context.load_cert_chain(certfile=server_crt_path, keyfile=server_key_path)
-    return ssl_context
+# Perform layout analysis
+result = layout_engine(image_path)
 
-@app.route('/')
-def home():
-    return "Hello, SSL-secured Flask!"
+# Set up the output directory
+output_dir = r'C:\path\to\output'
+os.makedirs(output_dir, exist_ok=True)
 
-def main():
-    host = LOCAL_HOST
-    port = port_no or (443 if os.getenv('ENVIRONMENT') == 'production' else 80)
-    
-    # SSL Context
-    ssl_context = get_ssl_context()
-    
-    # Run Flask app with SSL
-    app.run(host=host, port=port, ssl_context=ssl_context, threaded=True)
+# Load the image for visualization
+image = Image.open(image_path).convert('RGB')
 
-if __name__ == "__main__":
-    main()
+# Process each layout element and save results
+for i, element in enumerate(result):
+    if 'img' in element:
+        # Save element image if it contains an image (e.g., table)
+        element_img_path = os.path.join(output_dir, f'element_{i}.jpg')
+        element['img'].save(element_img_path)
+    else:
+        # Draw and save bounding boxes for text, title, table, list
+        draw_img = draw_structure_result(image, [element])
+        draw_img_path = os.path.join(output_dir, f'element_{i}_layout.jpg')
+        draw_img.save(draw_img_path)
+
+    # Print details of each element
+    print(f"Element {i+1}: Type - {element['type']}, Bounding box - {element['bbox']}")
+
+print("Offline layout analysis completed. Results saved in the output directory.")
