@@ -95,81 +95,46 @@ import numpy as np
 import cv2
 from keras.models import load_model
 import time
+from image_quality import ImageQualityAssessor  # Assuming Code 1 is saved in image_quality.py
+from image_classification import ImageClassifier  # Assuming Code 2 is saved in image_classification.py
 
-class ImageClassifier:
-    def __init__(self, model_path, class_indices, image_size=(299, 299), confidence_threshold=0.35):
-        # Load the pre-trained model
-        self.model = load_model(model_path)
-        # Store class indices and labels
-        self.class_indices = class_indices
-        self.class_labels = list(class_indices.values())
-        # Image size and confidence threshold
-        self.image_size = image_size
-        self.confidence_threshold = confidence_threshold
+# Function to check image quality and classify if it's sharp
+def process_image(image_path, quality_assessor, classifier):
+    # Step 1: Check image quality
+    quality_result = quality_assessor.is_image_blurry(image_path)
+    
+    if quality_result == "Blurry":
+        print(f"The image is blurry and cannot be processed.")
+        return None
+    
+    print(f"The image is sharp. Proceeding with classification...")
 
-    def load_and_preprocess_image(self, image_path):
-        """Load and preprocess a single image."""
-        img = cv2.imread(image_path)
-        if img is None:
-            print(f"Failed to load image: {image_path}")
-            return None
+    # Step 2: Classify the image
+    classification_result = classifier.predict(image_path)
+    
+    if classification_result:
+        print(f"Image: {classification_result['filename']}")
+        print(f"Predicted Class: {classification_result['predicted_label']} (Confidence: {classification_result['confidence']:.2f})")
+        print(f"Processing Time: {classification_result['processing_time']:.4f} seconds")
+        return classification_result
+    else:
+        print("Image classification failed.")
+        return None
 
-        # Resize image to model input size
-        img = cv2.resize(img, self.image_size)
-        img_array = img.astype('float32') / 255.0  # Normalize image
-        return np.expand_dims(img_array, axis=0)  # Add batch dimension
-
-    def predict(self, image_path):
-        """Predict the class of a single image."""
-        # Load and preprocess the image
-        test_image = self.load_and_preprocess_image(image_path)
-        if test_image is None:
-            return None
-
-        # Measure time taken for prediction
-        start_time = time.time()
-
-        # Make prediction
-        prediction = self.model.predict(test_image)
-
-        end_time = time.time()
-        processing_time = end_time - start_time
-
-        # Extract prediction details
-        predicted_prob = np.max(prediction)
-        predicted_class = np.argmax(prediction)
-
-        # Assign label based on confidence
-        if predicted_prob < self.confidence_threshold:
-            predicted_label = 'Others'
-        else:
-            predicted_label = self.class_labels[predicted_class]
-
-        return {
-            'filename': image_path,
-            'predicted_label': predicted_label,
-            'confidence': predicted_prob,
-            'processing_time': processing_time
-        }
-
-# Usage
+# Main function to run the pipeline
 if __name__ == "__main__":
-    # Define the model path and class indices
+    # Define paths for the models and images
     model_path = r'C:\CitiDev\text_ocr\image_quality\inception_v3_model_newtrain_japan.h5'
     class_indices = {0: 'Driving_License', 1: 'Others', 2: 'Passport', 3: 'Residence_Card'}
+    image_path = r'C:\CitiDev\text_ocr\image_quality\test_data\your_image.jpg'  # Modify this path
     
-    # Create an instance of the ImageClassifier
+    # Initialize the ImageQualityAssessor and ImageClassifier
+    image_quality_assessor = ImageQualityAssessor(blur_threshold=100.0)
     classifier = ImageClassifier(model_path, class_indices)
 
-    # Path to the image to be processed
-    image_path = r'C:\CitiDev\text_ocr\image_quality\test_data\your_image.jpg'  # Modify this path
-
-    # Get predictions for the image
-    result = classifier.predict(image_path)
-
+    # Process the image through the pipeline
+    result = process_image(image_path, image_quality_assessor, classifier)
+    
     if result:
-        # Print the result
-        print(f"Image: {result['filename']}")
-        print(f"Predicted Class: {result['predicted_label']} (Confidence: {result['confidence']:.2f})")
-        print(f"Processing Time: {result['processing_time']:.4f} seconds")
-
+        # Optionally save the result in a file or database, if needed
+        pass
