@@ -90,56 +90,86 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
-
-import cv2
+import os
 import numpy as np
-import warnings
+import cv2
+from keras.models import load_model
+import time
 
-# Suppress warnings
-warnings.simplefilter('ignore')
+class ImageClassifier:
+    def __init__(self, model_path, class_indices, image_size=(299, 299), confidence_threshold=0.35):
+        # Load the pre-trained model
+        self.model = load_model(model_path)
+        # Store class indices and labels
+        self.class_indices = class_indices
+        self.class_labels = list(class_indices.values())
+        # Image size and confidence threshold
+        self.image_size = image_size
+        self.confidence_threshold = confidence_threshold
 
-class ImageQualityAssessor:
-    def __init__(self, blur_threshold=100.0):
-        """
-        Initialize the ImageQualityAssessor class with a blur threshold.
-        :param blur_threshold: The threshold for the Laplacian variance to classify an image as blurry.
-        """
-        self.blur_threshold = blur_threshold
-
-    def is_image_blurry(self, image_path):
-        """
-        Determines whether the image is blurry or sharp using the Laplacian variance method.
-        :param image_path: Path to the image.
-        :return: "Blurry" if the image is considered blurry, "Sharp" otherwise.
-        """
-        # Read the image
+    def load_and_preprocess_image(self, image_path):
+        """Load and preprocess a single image."""
         img = cv2.imread(image_path)
-        
         if img is None:
-            print("Error: Could not load image.")
+            print(f"Failed to load image: {image_path}")
             return None
 
-        # Convert the image to grayscale
-        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Resize image to model input size
+        img = cv2.resize(img, self.image_size)
+        img_array = img.astype('float32') / 255.0  # Normalize image
+        return np.expand_dims(img_array, axis=0)  # Add batch dimension
 
-        # Compute the Laplacian of the image and then the variance
-        laplacian = cv2.Laplacian(gray_img, cv2.CV_64F)
-        variance = laplacian.var()
+    def predict(self, image_path):
+        """Predict the class of a single image."""
+        # Load and preprocess the image
+        test_image = self.load_and_preprocess_image(image_path)
+        if test_image is None:
+            return None
 
-        print(f"Laplacian Variance: {variance}")
+        # Measure time taken for prediction
+        start_time = time.time()
 
-        # If variance is below the threshold, the image is considered blurry
-        return "Blurry" if variance < self.blur_threshold else "Sharp"
+        # Make prediction
+        prediction = self.model.predict(test_image)
 
-# Usage Example:
+        end_time = time.time()
+        processing_time = end_time - start_time
 
-# Initialize the ImageQualityAssessor with the desired blur threshold
-image_quality_assessor = ImageQualityAssessor(blur_threshold=100.0)
+        # Extract prediction details
+        predicted_prob = np.max(prediction)
+        predicted_class = np.argmax(prediction)
 
-# Path to the image
-image_path = r"C:\CitiDev\text_ocr\image_quality\augmented_me_images.png"
+        # Assign label based on confidence
+        if predicted_prob < self.confidence_threshold:
+            predicted_label = 'Others'
+        else:
+            predicted_label = self.class_labels[predicted_class]
 
-# Get result
-result = image_quality_assessor.is_image_blurry(image_path)
-print(f"The image is: {result}")
+        return {
+            'filename': image_path,
+            'predicted_label': predicted_label,
+            'confidence': predicted_prob,
+            'processing_time': processing_time
+        }
+
+# Usage
+if __name__ == "__main__":
+    # Define the model path and class indices
+    model_path = r'C:\CitiDev\text_ocr\image_quality\inception_v3_model_newtrain_japan.h5'
+    class_indices = {0: 'Driving_License', 1: 'Others', 2: 'Passport', 3: 'Residence_Card'}
+    
+    # Create an instance of the ImageClassifier
+    classifier = ImageClassifier(model_path, class_indices)
+
+    # Path to the image to be processed
+    image_path = r'C:\CitiDev\text_ocr\image_quality\test_data\your_image.jpg'  # Modify this path
+
+    # Get predictions for the image
+    result = classifier.predict(image_path)
+
+    if result:
+        # Print the result
+        print(f"Image: {result['filename']}")
+        print(f"Predicted Class: {result['predicted_label']} (Confidence: {result['confidence']:.2f})")
+        print(f"Processing Time: {result['processing_time']:.4f} seconds")
 
