@@ -91,50 +91,43 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
 
+from math import e
+import cv2
+import numpy as np
+import warnings
+warnings.simplefilter('ignore')
+import tensorflow as tf
+from tensorflow import keras
+from keras.models import load_model
+from keras.preprocessing import image as keras_image
+from keras.applications.mobilenet import preprocess_input
 
-from paddleocr import PPStructure, draw_structure_result
-from PIL import Image
-import os
+# Path to the model
+model_path = r"C:\CitiDev\text_ocr\image_quality\weights_mobilenet_technical_0.11 1.hdf5"
 
-# Set paths to the pre-downloaded models
-detection_model_dir = r'C:\path\to\local\en_PP-OCRv3_det_infer'  # Detection model path
-layout_model_dir = r'C:\path\to\local\ppyolov2_r50vd_dcn_365e_voc'  # Layout model path
+# Load the model
+model = tf.keras.models.load_model(model_path)
 
-# Initialize PPStructure with local model paths for offline layout analysis
-layout_engine = PPStructure(
-    show_log=True,
-    det_model_dir=detection_model_dir,  # Set detection model directory
-    structure_model_dir=layout_model_dir,  # Set layout model directory
-    use_angle_cls=True,  # Angle classification if needed
-    lang='en'  # Language option
-)
+# Function to assess image quality
+def assess_image_quality(image_path, model):
+    img = keras_image.load_img(image_path, target_size=(224, 224))
+    img_array = keras_image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
 
-# Set the image path
-image_path = r'C:\path\to\your\image.jpg'
+    # Get prediction scores
+    scores = model.predict(img_array)[0]
+    mean_score = np.mean(scores * np.arange(1, 11))
+    return mean_score
 
-# Perform layout analysis
-result = layout_engine(image_path)
+# Function to determine if image is blurry
+def is_image_blurry(image_path, model, blur_threshold=6.0):
+    mean_score = assess_image_quality(image_path, model)
+    return "Blurry" if mean_score < blur_threshold else "Sharp"
 
-# Set up the output directory
-output_dir = r'C:\path\to\output'
-os.makedirs(output_dir, exist_ok=True)
+# Path to the image
+image_path = r"C:\CitiDev\text_ocr\image_quality\augmented_me_images.png"
 
-# Load the image for visualization
-image = Image.open(image_path).convert('RGB')
-
-# Process each layout element and save results
-for i, element in enumerate(result):
-    if 'img' in element:
-        # Save element image if it contains an image (e.g., table)
-        element_img_path = os.path.join(output_dir, f'element_{i}.jpg')
-        element['img'].save(element_img_path)
-    else:
-        # Draw and save bounding boxes for text, title, table, list
-        draw_img = draw_structure_result(image, [element])
-        draw_img_path = os.path.join(output_dir, f'element_{i}_layout.jpg')
-        draw_img.save(draw_img_path)
-
-    # Print details of each element
-    print(f"Element {i+1}: Type - {element['type']}, Bounding box - {element['bbox']}")
-
-print("Offline layout analysis completed. Results saved in the output directory.")
+# Get result
+result = is_image_blurry(image_path, model)
+print(f"The image is: {result}")
