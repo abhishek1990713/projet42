@@ -91,22 +91,20 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
 
-from math import e
-import cv2
 import numpy as np
 import warnings
 warnings.simplefilter('ignore')
 import tensorflow as tf
-from tensorflow import keras
-from keras.models import load_model
-from keras.preprocessing import image as keras_image
-from keras.applications.mobilenet import preprocess_input
+from tensorflow.keras.applications import MobileNet
+from tensorflow.keras.preprocessing import image as keras_image
+from tensorflow.keras.applications.mobilenet import preprocess_input
 
-# Path to the model
+# Path to the model weights
 model_path = r"C:\CitiDev\text_ocr\image_quality\weights_mobilenet_technical_0.11 1.hdf5"
 
-# Load the model
-model = tf.keras.models.load_model(model_path)
+# Load the MobileNet model architecture
+model = MobileNet(weights=None)  # Set weights=None since we are loading custom weights
+model.load_weights(model_path)  # Load the weights from the HDF5 file
 
 # Function to assess image quality
 def assess_image_quality(image_path, model):
