@@ -91,37 +91,55 @@ if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
 
-
 import cv2
 import numpy as np
 import warnings
 
+# Suppress warnings
 warnings.simplefilter('ignore')
 
-# Function to check if an image is blurry using Laplacian Variance
-def is_image_blurry(image_path, blur_threshold=100.0):
-    # Read the image
-    img = cv2.imread(image_path)
-    
-    if img is None:
-        print("Error: Could not load image.")
-        return None
+class ImageQualityAssessor:
+    def __init__(self, blur_threshold=100.0):
+        """
+        Initialize the ImageQualityAssessor class with a blur threshold.
+        :param blur_threshold: The threshold for the Laplacian variance to classify an image as blurry.
+        """
+        self.blur_threshold = blur_threshold
 
-    # Convert the image to grayscale
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    def is_image_blurry(self, image_path):
+        """
+        Determines whether the image is blurry or sharp using the Laplacian variance method.
+        :param image_path: Path to the image.
+        :return: "Blurry" if the image is considered blurry, "Sharp" otherwise.
+        """
+        # Read the image
+        img = cv2.imread(image_path)
+        
+        if img is None:
+            print("Error: Could not load image.")
+            return None
 
-    # Compute the Laplacian of the image and then the variance
-    laplacian = cv2.Laplacian(gray_img, cv2.CV_64F)
-    variance = laplacian.var()
+        # Convert the image to grayscale
+        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    print(f"Laplacian Variance: {variance}")
+        # Compute the Laplacian of the image and then the variance
+        laplacian = cv2.Laplacian(gray_img, cv2.CV_64F)
+        variance = laplacian.var()
 
-    # If variance is below the threshold, the image is considered blurry
-    return "Blurry" if variance < blur_threshold else "Sharp"
+        print(f"Laplacian Variance: {variance}")
+
+        # If variance is below the threshold, the image is considered blurry
+        return "Blurry" if variance < self.blur_threshold else "Sharp"
+
+# Usage Example:
+
+# Initialize the ImageQualityAssessor with the desired blur threshold
+image_quality_assessor = ImageQualityAssessor(blur_threshold=100.0)
 
 # Path to the image
 image_path = r"C:\CitiDev\text_ocr\image_quality\augmented_me_images.png"
 
 # Get result
-result = is_image_blurry(image_path)
+result = image_quality_assessor.is_image_blurry(image_path)
 print(f"The image is: {result}")
+
