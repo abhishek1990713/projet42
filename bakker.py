@@ -92,35 +92,36 @@ if __name__ == '__main__':
 
 
 
-def assess_image_quality(image_path, model):
-    # Load and preprocess the image
-    img = load_img(image_path, target_size=(224, 224))  # Using tf.keras.utils.load_img
-    img_array = img_to_array(img)  # Using tf.keras.utils.img_to_array
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array = preprocess_input(img_array)
+import cv2
+import numpy as np
+import warnings
 
-    # Run the image through the model and get predictions
-    predictions = model.predict(img_array)
+warnings.simplefilter('ignore')
+
+# Function to check if an image is blurry using Laplacian Variance
+def is_image_blurry(image_path, blur_threshold=100.0):
+    # Read the image
+    img = cv2.imread(image_path)
     
-    # Decode and print top predictions
-    decoded_predictions = decode_predictions(predictions, top=3)[0]
-    print("Top 3 Predictions:")
-    for i, (imagenet_id, label, score) in enumerate(decoded_predictions):
-        print(f"{i + 1}: {label} ({score:.2f})")
+    if img is None:
+        print("Error: Could not load image.")
+        return None
 
-    # A mock quality score based on prediction confidence for this example
-    mean_score = np.mean(predictions)  # This won't give actual blurriness but is a placeholder for quality
-    return mean_score
+    # Convert the image to grayscale
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-# Function to determine if image is blurry (using a simple threshold)
-def is_image_blurry(image_path, model, blur_threshold=0.1):
-    mean_score = assess_image_quality(image_path, model)
-    # This threshold would need adjustment for actual blur detection purposes
-    return "Blurry" if mean_score < blur_threshold else "Sharp"
+    # Compute the Laplacian of the image and then the variance
+    laplacian = cv2.Laplacian(gray_img, cv2.CV_64F)
+    variance = laplacian.var()
+
+    print(f"Laplacian Variance: {variance}")
+
+    # If variance is below the threshold, the image is considered blurry
+    return "Blurry" if variance < blur_threshold else "Sharp"
 
 # Path to the image
 image_path = r"C:\CitiDev\text_ocr\image_quality\augmented_me_images.png"
 
 # Get result
-result = is_image_blurry(image_path, model)
+result = is_image_blurry(image_path)
 print(f"The image is: {result}")
