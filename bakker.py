@@ -90,61 +90,49 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 
+
 import numpy as np
 import warnings
-import tensorflow as tf
-from tensorflow.keras.preprocessing import image as keras_image
-from tensorflow.keras.applications.mobilenet import preprocess_input
 from tensorflow.keras.applications import MobileNet
+from tensorflow.keras.preprocessing import image as keras_image
+from tensorflow.keras.applications.mobilenet import preprocess_input, decode_predictions
 
 warnings.simplefilter('ignore')
 
-# Path to the model weights or model file
-model_path = r"C:\CitiDev\text_ocr\image_quality\weights_mobilenet_technical_0.11 1.hdf5"
+# Load the MobileNet model with pre-trained ImageNet weights
+model = MobileNet(weights='imagenet')
+print("MobileNet model loaded with ImageNet weights.")
 
-# Approach 1: Try loading the full model (if saved with `model.save()`)
-try:
-    model = tf.keras.models.load_model(model_path)
-    print("Model loaded successfully with load_model().")
-except Exception as e:
-    print("Failed to load model with load_model(). Trying to load as weights only.")
-    print(f"Error: {e}")
-
-    # Approach 2: Load MobileNet architecture with custom weights
-    try:
-        # Customize the input shape if necessary; check original training code if available
-        model = MobileNet(weights=None, input_shape=(224, 224, 3), alpha=1.0)
-        model.load_weights(model_path)
-        print("Model loaded successfully with MobileNet architecture and custom weights.")
-    except Exception as e:
-        print("Failed to load model using MobileNet architecture. Please check model compatibility.")
-        print(f"Error: {e}")
-        raise
-
-# Function to assess image quality
+# Function to assess image quality (using a dummy approach here since MobileNet was not trained for blur detection)
 def assess_image_quality(image_path, model):
+    # Load and preprocess the image
     img = keras_image.load_img(image_path, target_size=(224, 224))
     img_array = keras_image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
     img_array = preprocess_input(img_array)
 
-    # Get prediction scores
-    scores = model.predict(img_array)[0]
-    mean_score = np.mean(scores * np.arange(1, 11))
+    # Run the image through the model and get predictions
+    predictions = model.predict(img_array)
+    
+    # Decode and print top predictions
+    decoded_predictions = decode_predictions(predictions, top=3)[0]
+    print("Top 3 Predictions:")
+    for i, (imagenet_id, label, score) in enumerate(decoded_predictions):
+        print(f"{i + 1}: {label} ({score:.2f})")
+
+    # A mock quality score based on prediction confidence for this example
+    mean_score = np.mean(predictions)  # This won't give actual blurriness but is a placeholder for quality
     return mean_score
 
-# Function to determine if image is blurry
-def is_image_blurry(image_path, model, blur_threshold=6.0):
+# Function to determine if image is blurry (using a simple threshold)
+def is_image_blurry(image_path, model, blur_threshold=0.1):
     mean_score = assess_image_quality(image_path, model)
+    # This threshold would need adjustment for actual blur detection purposes
     return "Blurry" if mean_score < blur_threshold else "Sharp"
 
 # Path to the image
 image_path = r"C:\CitiDev\text_ocr\image_quality\augmented_me_images.png"
 
 # Get result
-try:
-    result = is_image_blurry(image_path, model)
-    print(f"The image is: {result}")
-except Exception as e:
-    print("Error during image assessment.")
-    print(f"Error: {e}")
+result = is_image_blurry(image_path, model)
+print(f"The image is: {result}")
