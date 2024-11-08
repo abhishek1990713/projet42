@@ -167,16 +167,26 @@ class PassportOCR:
                     imcrop_np = np.array(imcrop)  # Convert to NumPy array
                     ocr_text = self.ocr.ocr(imcrop_np, cls=True)  # OCR with PaddleOCR
                     
+                    # Print OCR text for debugging
                     print("OCR Text:", ocr_text)
                     
-                    # Validate passport code
-                    pattern = r"^[A-Za-z]{2}.*\d{2}$"
-                    match = re.match(pattern, ocr_text[0][0][1])  # Assuming the text is in the first element of the result
-                    if match:
-                        print("Valid passport code")
-                        passport_code_check = True
-                    else:
-                        print("Invalid passport code")
+                    # Process each detected region (assuming we're looking at the first one for validation)
+                    for region in ocr_text:
+                        detected_text = region[0][1]  # Extract the recognized text from the first region
+
+                        # Check if detected text is valid
+                        if isinstance(detected_text, str):
+                            # Validate passport code using regex
+                            pattern = r"^[A-Za-z]{2}.*\d{2}$"
+                            match = re.match(pattern, detected_text)
+
+                            if match:
+                                print("Valid passport code")
+                                passport_code_check = True
+                            else:
+                                print("Invalid passport code")
+                        else:
+                            print(f"Detected text is not a string: {detected_text}")
         
         # Final check based on conditions
         if all_boxes_present and confidence_check and passport_code_check:
