@@ -90,7 +90,15 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 from paddleocr import PaddleOCR
+import os
+import numpy as np
+import cv2
+from keras.models import load_model
+import time
+from image_quality import ImageQualityAssessor  # Assuming Code 1 is saved in image_quality.py
+from image_classification import ImageClassifier  # Assuming Code 2 is saved in image_classification.py
 
+# Function to extract text and check keywords
 def extract_text_from_image(image_path, image_type):
     # Initialize PaddleOCR with Japanese language
     ocr = PaddleOCR(lang="japan")
@@ -118,9 +126,41 @@ def extract_text_from_image(image_path, image_type):
 
     return extracted_text
 
-# Example usage
-image_path = 'path_to_your_image.jpg'
-image_type = 'passport'  # Choose 'passport' or 'driving_license'
-extracted_text = extract_text_from_image(image_path, image_type)
-print("Extracted Text:", extracted_text)
+# Function to check image quality and classify, then extract text based on classification
+def process_image_pipeline(image_path, quality_assessor, classifier):
+    # Step 1: Check image quality
+    quality_result = quality_assessor.is_image_blurry(image_path)
+    
+    if quality_result == "Blurry":
+        print("The image is blurry and cannot be processed for classification.")
+        return None
+    
+    print("The image is sharp. Proceeding with classification...")
 
+    # Step 2: Classify the image
+    classification_result = classifier.predict(image_path)
+    
+    if classification_result:
+        predicted_label = classification_result['predicted_label']
+        print(f"Predicted Class: {predicted_label} (Confidence: {classification_result['confidence']:.2f})")
+        
+        # Step 3: Extract text and check keywords based on the classified label
+        extracted_text = extract_text_from_image(image_path, predicted_label)
+        print("Extracted Text:", extracted_text)
+    else:
+        print("Image classification failed.")
+        return None
+
+# Main function to run the full pipeline
+if __name__ == "__main__":
+    # Define paths for the models and images
+    model_path = r'C:\CitiDev\text_ocr\image_quality\inception_v3_model_newtrain_japan.h5'
+    class_indices = {0: 'driving_license', 1: 'others', 2: 'passport', 3: 'residence_card'}
+    image_path = r'C:\CitiDev\text_ocr\image_quality\test_data\your_image.jpg'  # Modify this path
+    
+    # Initialize the ImageQualityAssessor and ImageClassifier
+    image_quality_assessor = ImageQualityAssessor(blur_threshold=100.0)
+    classifier = ImageClassifier(model_path, class_indices)
+
+    # Process the image through the pipeline
+    process_image_pipeline(image_path, image_quality_assessor, classifier)
