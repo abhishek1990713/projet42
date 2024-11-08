@@ -90,9 +90,47 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 # api2_client.py
+from flask import Flask, jsonify, request
+import ssl
 
-from flask import Flask, jsonify
+app = Flask(__name__)
+
+# Endpoint for testing
+@app.route("/")
+def root():
+    # Extract the client certificate information from the request
+    client_cert = request.environ.get('SSL_CLIENT_CERT')
+
+    if client_cert:
+        print("Client Certificate received:")
+        print(client_cert)  # Printing the certificate details
+    else:
+        print("No client certificate received.")
+
+    return jsonify({"message": "Hello from API 1 - Secured with mTLS"})
+
+# Configure SSL context with server and client certificate verification
+def create_ssl_context():
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    
+    # Path to the server certificate and private key
+    ssl_context.load_cert_chain(certfile="path/to/server_cert.cer", keyfile="path/to/server_key.key")
+    
+    # Enforce client certificate verification (optional here)
+    ssl_context.verify_mode = ssl.CERT_OPTIONAL  # You can use CERT_REQUIRED if you want to enforce client certs
+
+    return ssl_context
+
+if __name__ == "__main__":
+    ssl_context = create_ssl_context()
+    app.run(host="0.0.0.0", port=8000, ssl_context=ssl_context)
+
+
+
+# api2_client.py
+
 import requests
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
@@ -103,14 +141,19 @@ client_cert = ("path/to/client_cert.cer", "path/to/client_key.key")
 @app.route("/")
 def call_api1():
     try:
+        print("Making request to API 1 with client certificate...")
+        
         # Sending request to API 1 with mutual TLS
         response = requests.get("https://localhost:8000/", cert=client_cert, verify=False)
         
-        # Returning the response from API 1 to the client
+        # Print the response from API 1
+        print(f"Received response: {response.json()}")
+        
+        # Return the response from API 1 to the client
         return jsonify(response.json()), response.status_code
     except requests.exceptions.SSLError as e:
+        print(f"SSL error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
