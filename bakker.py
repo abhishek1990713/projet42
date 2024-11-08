@@ -89,42 +89,28 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
+# api2_client.py
 
 from flask import Flask, jsonify
-import ssl
+import requests
 
 app = Flask(__name__)
 
-# Endpoint for testing
-@app.route("/")
-def root():
-    return jsonify({"message": "Hello from API 1 - Secured with mTLS"})
-
-# Configure SSL context with server and client certificate verification
-def create_ssl_context():
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    
-    # Path to the server certificate and private key
-    ssl_context.load_cert_chain(certfile="path/to/server_cert.cer", keyfile="path/to/server_key.key")
-    
-    # Disable verification of client certificates since we don't have a CA cert
-    ssl_context.verify_mode = ssl.CERT_OPTIONAL  # You can use CERT_REQUIRED if you want to enforce client certs
-
-    return ssl_context
-
-if __name__ == "__main__":
-    ssl_context = create_ssl_context()
-    app.run(host="0.0.0.0", port=8000, ssl_context=ssl_context)
-
-
-
-
-import requests
-
 # Path to the client certificate and private key
 client_cert = ("path/to/client_cert.cer", "path/to/client_key.key")
-# Since we don't have a CA cert, we'll use `verify=False` to skip server certificate verification
-response = requests.get("https://api1.example.com/", cert=client_cert, verify=False)
 
-# Display the response
-print(response.json())
+# Client route that makes a request to API 1
+@app.route("/")
+def call_api1():
+    try:
+        # Sending request to API 1 with mutual TLS
+        response = requests.get("https://localhost:8000/", cert=client_cert, verify=False)
+        
+        # Returning the response from API 1 to the client
+        return jsonify(response.json()), response.status_code
+    except requests.exceptions.SSLError as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+
