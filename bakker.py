@@ -89,46 +89,117 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-import ssl
-from fastapi import FastAPI
-import uvicorn
+from ultralytics import YOLO
+import os
+import re
+from PIL import Image
+import numpy as np
+from paddleocr import PaddleOCR
+import logging
 
-app = FastAPI()
+# Set logging level for PaddleOCR
+logging.getLogger('ppocr').setLevel(logging.WARNING)
 
-# Endpoint for testing
-@app.get("/")
-async def root():
-    return {"message": "Hello from API 1 - Secured with mTLS"}
-
-# Configure SSL context with server and client certificate verification
-def create_ssl_context():
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+class PassportOCR:
+    def __init__(self, model_path, det_model_dir, rec_model_dir, cls_model_dir, temp_fld_path, confidence_threshold=0.70):
+        # Initialize model paths
+        self.det_model_dir = det_model_dir
+        self.rec_model_dir = rec_model_dir
+        self.cls_model_dir = cls_model_dir
+        
+        # Initialize OCR
+        self.ocr = PaddleOCR(lang='japan', use_angle_cls=False, use_gpu=False, det=True, rec=True, cls=False,
+                             det_model_dir=self.det_model_dir, rec_model_dir=self.rec_model_dir, cls_model_dir=self.cls_model_dir)
+        
+        # YOLO model path
+        self.model_path = model_path
+        
+        # File paths
+        self.temp_fld_path = temp_fld_path
+        self.confidence_threshold = confidence_threshold
+        
+        # Initialize YOLO model
+        self.model = YOLO(self.model_path)
     
-    # Path to the server certificate and private key
-    ssl_context.load_cert_chain(certfile="path/to/server_cert.pem", keyfile="path/to/server_key.pem")
-    
-    # CA certificate to validate client certificates
-    ssl_context.load_verify_locations("path/to/ca_cert.pem")
-    
-    # Require client certificate
-    ssl_context.verify_mode = ssl.CERT_REQUIRED
-    
-    return ssl_context
+    def process_image(self, input_file_path, ocr_eng="tesseract"):
+        file_name = os.path.basename(input_file_path)
+        
+        # Load the YOLO model and process the image
+        results = self.model(input_file_path)
+        image = Image.open(input_file_path)
+        
+        # Flags to check conditions
+        all_boxes_present = False
+        confidence_check = False
+        passport_code_check = False
+        
+        for result in results:
+            boxes = result.boxes
+            confidence_scores = [box.conf[0].item() for box in boxes] if boxes is not None else []
+            
+            # Check if all bounding boxes are present
+            if boxes is not None and len(boxes) == 4:
+                all_boxes_present = True
+                print("All four bounding boxes are present.")
+            else:
+                print("Not all four bounding boxes are present.")
+            
+            # Check confidence scores
+            if all(score >= self.confidence_threshold for score in confidence_scores):
+                confidence_check = True
+                print("All confidence scores are above the threshold of 0.70.")
+            else:
+                print("Some confidence scores are below the threshold of 0.70.")
+            
+            # Check for valid passport code
+            for box in boxes:
+                class_id = result.names[box.cls[0].item()]
+                if class_id == "Bottom":
+                    cords = box.xyxy[0].tolist()
+                    cords = [round(x) for x in cords]
+                    imcrop = image.crop((cords[0], cords[1], cords[2], cords[3]))
+                    
+                    temp_file = file_name.split(".")[0]
+                    temp_file_name = os.path.join(self.temp_fld_path, f"{temp_file}_crop_{class_id}.png")
+                    imcrop.save(temp_file_name)
+                    
+                    # Option 1: Convert PIL Image to NumPy array and perform OCR
+                    if ocr_eng == "paddle":
+                        imcrop_np = np.array(imcrop)  # Convert to NumPy array
+                        ocr_text = self.ocr.ocr(imcrop_np, cls=True)  # OCR with PaddleOCR
+                    # Option 2: Save the image as a temporary file and perform OCR
+                    else:
+                        ocr_text = self.ocr.ocr(temp_file_name, cls=True) if ocr_eng == "paddle" else pytesseract.image_to_string(imcrop)
+                    
+                    print("OCR Text:", ocr_text)
+                    
+                    # Validate passport code
+                    pattern = r"^[A-Za-z]{2}.*\d{2}$"
+                    match = re.match(pattern, ocr_text)
+                    if match:
+                        print("Valid passport code")
+                        passport_code_check = True
+                    else:
+                        print("Invalid passport code")
+        
+        # Final check based on conditions
+        if all_boxes_present and confidence_check and passport_code_check:
+            print("Image is uploaded correctly")
+        else:
+            print("Image is not good")
 
-if __name__ == "__main__":
-    ssl_context = create_ssl_context()
-    uvicorn.run(app, host="0.0.0.0", port=8000, ssl_context=ssl_context)
+# Usage example
+det_model_dir = r"C:\CitiDev\text_ocr\paddle_model\Multilingual_PP-OCRv3_det_infer"
+rec_model_dir = r"C:\CitiDev\text_ocr\paddle_model\japan_PP-OCRv4_rec_infer"
+cls_model_dir = r"C:\CitiDev\text_ocr\paddle_model\ch_ppocr_mobile_v2.0_cls_infer"
+model_path = r"C:\CitiDev\text_ocr\image_quality\yolo_model\best_passport.pt"
+temp_fld_path = r"C:\CitiDev\text_ocr\image_quality\yolo_model\temp"
 
+passport_ocr = PassportOCR(model_path=model_path, 
+                           det_model_dir=det_model_dir, 
+                           rec_model_dir=rec_model_dir, 
+                           cls_model_dir=cls_model_dir, 
+                           temp_fld_path=temp_fld_path)
 
-import requests
-
-# Configure client certificate and key, and CA for server verification
-client_cert = ("path/to/client_cert.pem", "path/to/client_key.pem")
-ca_cert = "path/to/ca_cert.pem"
-
-# Make a request to API 1 with client certificate
-response = requests.get("https://api1.example.com/", cert=client_cert, verify=ca_cert)
-
-# Display the response
-print(response.json())
-
+input_file_path = r"C:\CitiDev\text_ocr\image_quality\test_data\augmented_me_bge9m4lu.png"
+passport_ocr.process_image(input_file_path)
