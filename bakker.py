@@ -121,7 +121,7 @@ class PassportOCR:
         # Initialize YOLO model
         self.model = YOLO(self.model_path)
     
-    def process_image(self, input_file_path, ocr_eng="tesseract"):
+    def process_image(self, input_file_path):
         file_name = os.path.basename(input_file_path)
         
         # Load the YOLO model and process the image
@@ -163,19 +163,15 @@ class PassportOCR:
                     temp_file_name = os.path.join(self.temp_fld_path, f"{temp_file}_crop_{class_id}.png")
                     imcrop.save(temp_file_name)
                     
-                    # Option 1: Convert PIL Image to NumPy array and perform OCR
-                    if ocr_eng == "paddle":
-                        imcrop_np = np.array(imcrop)  # Convert to NumPy array
-                        ocr_text = self.ocr.ocr(imcrop_np, cls=True)  # OCR with PaddleOCR
-                    # Option 2: Save the image as a temporary file and perform OCR
-                    else:
-                        ocr_text = self.ocr.ocr(temp_file_name, cls=True) if ocr_eng == "paddle" else pytesseract.image_to_string(imcrop)
+                    # Convert PIL Image to NumPy array and perform OCR
+                    imcrop_np = np.array(imcrop)  # Convert to NumPy array
+                    ocr_text = self.ocr.ocr(imcrop_np, cls=True)  # OCR with PaddleOCR
                     
                     print("OCR Text:", ocr_text)
                     
                     # Validate passport code
                     pattern = r"^[A-Za-z]{2}.*\d{2}$"
-                    match = re.match(pattern, ocr_text)
+                    match = re.match(pattern, ocr_text[0][0][1])  # Assuming the text is in the first element of the result
                     if match:
                         print("Valid passport code")
                         passport_code_check = True
