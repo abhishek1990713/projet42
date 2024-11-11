@@ -90,82 +90,60 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 # api2_client.py
-import os
-import re
-from PIL import Image
-import pytesseract
+
 from ultralytics import YOLO
+import os
 
-def process_passport_image(model_path, input_file_path, temp_folder_path, confidence_threshold=0.70, ocr_engine="tesseract"):
-    # Set up Tesseract path
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-    # Load YOLO model
+def process_image(model_path, input_file_path, confidence_threshold=0.70, output_filename="test_result.jpg"):
+    # Load the YOLO model
     model = YOLO(model_path)
-    img = Image.open(input_file_path)
     
-    # Run model inference
+    # Run the model on the input image
     results = model(input_file_path)
-
+    
     # Flags to check conditions
     all_boxes_present = False
     confidence_check = False
-    passport_code_check = False
-
+    
+    # Process results
     for result in results:
+        # Extract bounding boxes and other outputs
         boxes = result.boxes  # Bounding boxes
-        confidence_scores = boxes.conf if boxes is not None else []
-
-        # Check if all required bounding boxes are present
-        if boxes is not None and len(boxes) == 3:
+        masks = result.masks  # Segmentation masks
+        keypoints = result.keypoints  # Pose keypoints
+        probs = result.probs  # Classification probabilities
+        obb = result.obb  # Oriented bounding boxes
+        
+        # Show the result and save it
+        result.show()  # Display on screen
+        result.save(filename=output_filename)  # Save to disk
+        print(f"Result saved as {output_filename}")
+        
+        # Check if required bounding boxes are present
+        if boxes is not None and len(boxes) == 4:
             all_boxes_present = True
-            print("All required bounding boxes are present.")
+            print("All four bounding boxes are present.")
         else:
-            print("Not all required bounding boxes are present.")
-
+            print("Not all four bounding boxes are present.")
+        
         # Check confidence scores
+        confidence_scores = boxes.conf if boxes is not None else []
         if all(score >= confidence_threshold for score in confidence_scores):
             confidence_check = True
-            print("All confidence scores are above the threshold.")
+            print("All confidence scores are above the threshold of 0.70.")
         else:
-            print("Some confidence scores are below the threshold.")
-
-        # Extract and validate passport code using OCR
-        for box in boxes:
-            class_id = result.names[box.cls[0].item()]
-            if class_id == "Bottom":
-                cords = box.xyxy[0].tolist()
-                cords = [round(x) for x in cords]
-                im_crop = img.crop((cords[0], cords[1], cords[2], cords[3]))
-
-                # Save cropped image
-                temp_file_name = os.path.join(temp_folder_path, f"{os.path.basename(input_file_path).split('.')[0]}_crop_{class_id}.png")
-                im_crop.save(temp_file_name)
-
-                # Perform OCR
-                if ocr_engine == "tesseract":
-                    ocr_text = pytesseract.image_to_string(im_crop)
-                    print("OCR Text:", ocr_text)
-                    
-                    # Validate passport code
-                    pattern = r"^[A-Za-z]{2}.*\d{2}$"
-                    match = re.match(pattern, ocr_text)
-                    if match:
-                        print("Valid passport code.")
-                        passport_code_check = True
-                    else:
-                        print("Invalid passport code.")
-
-    # Final validation based on conditions
-    if all_boxes_present and confidence_check and passport_code_check:
+            print("Some confidence scores are below the threshold of 0.70.")
+    
+    # Final check based on conditions
+    if all_boxes_present and confidence_check:
         print("Image is uploaded correctly.")
     else:
         print("Image is not good.")
 
 # Example usage
-process_passport_image(
-    model_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\best_passport.pt",
-    input_file_path=r"C:\CitiDev\text_ocr\image_quality\test_data\augmented_me_bge9m4lu.png",
-    temp_folder_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\temp"
+process_image(
+    model_path=r"C:\CitiDev\DOC_OCR\Data_set\runs\detect\train\weights\best.pt",
+    input_file_path=r"C:\CitiDev\Japne_classification\dataset\test_data\RC\v4na4xm1.png",
+    confidence_threshold=0.70,
+    output_filename="test_result.jpg"
 )
-
