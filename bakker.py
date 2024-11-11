@@ -94,10 +94,10 @@ import ssl
 import requests
 
 # Paths to the client certificate and private key, along with the password for the private key
-CERTFILE = 'certificate.pem'
-KEYFILE = 'private.key'
-KEY_PASSWORD = 'your_password_here'  # Password for the private key
-SERVER_CERT = 'server_cert.pem'  # Server's self-signed certificate (optional for testing)
+CERTFILE = 'certificate.pem'   # Path to the client certificate
+KEYFILE = 'private.key'        # Path to the client private key
+KEY_PASSWORD = 'your_password_here'  # Password for the private key (replace with actual password)
+SERVER_CERT = 'server_cert.pem'  # Path to the server's certificate (optional for testing)
 
 # Flask server URL
 url = 'https://127.0.0.1:8443/api/data'
