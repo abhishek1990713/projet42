@@ -102,13 +102,13 @@ SERVER_CERT = 'server_cert.pem'  # Path to the server's certificate (optional fo
 # Flask server URL
 url = 'https://127.0.0.1:8443/api/data'
 
-# Send a GET request with the client certificate for mTLS
+# Send a GET request with the client certificate for mTLS (using requests with cert and key)
 try:
     # Using requests to connect securely with the server, bypassing the verification of the server certificate.
     response = requests.get(
         url,
         cert=(CERTFILE, KEYFILE),  # Client cert and key for mTLS
-        verify=False  # Disable server certificate verification (not recommended for production)
+        verify=SERVER_CERT  # Verify the server certificate (if you have it, or set to False for testing)
     )
     print("Response from server:", response.json())
 except requests.exceptions.SSLError as e:
@@ -116,9 +116,7 @@ except requests.exceptions.SSLError as e:
 except Exception as e:
     print("Error:", e)
 
-# For direct SSL socket connection without using requests (in case you need raw socket connection)
-# This is how you can disable certificate verification using raw SSL sockets.
-
+# For direct SSL socket connection without using requests (handling raw SSL sockets)
 try:
     # Create SSL context and configure it
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -128,12 +126,14 @@ try:
     
     # Optionally, disable hostname checking and server certificate verification for testing
     context.check_hostname = False  # Disable hostname checking (optional)
-    context.verify_mode = ssl.CERT_NONE  # Disable server certificate verification
+    
+    # Specify the server's certificate (if using self-signed or custom CA)
+    context.load_verify_locations(cafile=SERVER_CERT)  # If the server's certificate is not trusted by default
 
     # Establish connection to Flask server
     with socket.create_connection(('127.0.0.1', 8443)) as sock:
         with context.wrap_socket(sock, server_hostname='127.0.0.1') as ssock:
-            print("Connected to server securely (no certificate verification).")
+            print("Connected to server securely (using specified server cert).")
             ssock.sendall(b"Hello, server")
             data = ssock.recv(1024)
             print("Received:", data.decode())
