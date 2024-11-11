@@ -90,70 +90,82 @@ if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
 # api2_client.py
-from flask import Flask, jsonify, request
-import ssl
+import os
+import re
+from PIL import Image
+import pytesseract
+from ultralytics import YOLO
 
-app = Flask(__name__)
+def process_passport_image(model_path, input_file_path, temp_folder_path, confidence_threshold=0.70, ocr_engine="tesseract"):
+    # Set up Tesseract path
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# Endpoint for testing
-@app.route("/")
-def root():
-    # Extract the client certificate information from the request
-    client_cert = request.environ.get('SSL_CLIENT_CERT')
+    # Load YOLO model
+    model = YOLO(model_path)
+    img = Image.open(input_file_path)
+    
+    # Run model inference
+    results = model(input_file_path)
 
-    if client_cert:
-        print("Client Certificate received:")
-        print(client_cert)  # Printing the certificate details
+    # Flags to check conditions
+    all_boxes_present = False
+    confidence_check = False
+    passport_code_check = False
+
+    for result in results:
+        boxes = result.boxes  # Bounding boxes
+        confidence_scores = boxes.conf if boxes is not None else []
+
+        # Check if all required bounding boxes are present
+        if boxes is not None and len(boxes) == 3:
+            all_boxes_present = True
+            print("All required bounding boxes are present.")
+        else:
+            print("Not all required bounding boxes are present.")
+
+        # Check confidence scores
+        if all(score >= confidence_threshold for score in confidence_scores):
+            confidence_check = True
+            print("All confidence scores are above the threshold.")
+        else:
+            print("Some confidence scores are below the threshold.")
+
+        # Extract and validate passport code using OCR
+        for box in boxes:
+            class_id = result.names[box.cls[0].item()]
+            if class_id == "Bottom":
+                cords = box.xyxy[0].tolist()
+                cords = [round(x) for x in cords]
+                im_crop = img.crop((cords[0], cords[1], cords[2], cords[3]))
+
+                # Save cropped image
+                temp_file_name = os.path.join(temp_folder_path, f"{os.path.basename(input_file_path).split('.')[0]}_crop_{class_id}.png")
+                im_crop.save(temp_file_name)
+
+                # Perform OCR
+                if ocr_engine == "tesseract":
+                    ocr_text = pytesseract.image_to_string(im_crop)
+                    print("OCR Text:", ocr_text)
+                    
+                    # Validate passport code
+                    pattern = r"^[A-Za-z]{2}.*\d{2}$"
+                    match = re.match(pattern, ocr_text)
+                    if match:
+                        print("Valid passport code.")
+                        passport_code_check = True
+                    else:
+                        print("Invalid passport code.")
+
+    # Final validation based on conditions
+    if all_boxes_present and confidence_check and passport_code_check:
+        print("Image is uploaded correctly.")
     else:
-        print("No client certificate received.")
+        print("Image is not good.")
 
-    return jsonify({"message": "Hello from API 1 - Secured with mTLS"})
+# Example usage
+process_passport_image(
+    model_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\best_passport.pt",
+    input_file_path=r"C:\CitiDev\text_ocr\image_quality\test_data\augmented_me_bge9m4lu.png",
+    temp_folder_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\temp"
+)
 
-# Configure SSL context with server and client certificate verification
-def create_ssl_context():
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    
-    # Path to the server certificate and private key
-    ssl_context.load_cert_chain(certfile="path/to/server_cert.cer", keyfile="path/to/server_key.key")
-    
-    # Enforce client certificate verification (optional here)
-    ssl_context.verify_mode = ssl.CERT_OPTIONAL  # You can use CERT_REQUIRED if you want to enforce client certs
-
-    return ssl_context
-
-if __name__ == "__main__":
-    ssl_context = create_ssl_context()
-    app.run(host="0.0.0.0", port=8000, ssl_context=ssl_context)
-
-
-
-# api2_client.py
-
-import requests
-from flask import Flask, jsonify
-
-app = Flask(__name__)
-
-# Path to the client certificate and private key
-client_cert = ("path/to/client_cert.cer", "path/to/client_key.key")
-
-# Client route that makes a request to API 1
-@app.route("/")
-def call_api1():
-    try:
-        print("Making request to API 1 with client certificate...")
-        
-        # Sending request to API 1 with mutual TLS
-        response = requests.get("https://localhost:8000/", cert=client_cert, verify=False)
-        
-        # Print the response from API 1
-        print(f"Received response: {response.json()}")
-        
-        # Return the response from API 1 to the client
-        return jsonify(response.json()), response.status_code
-    except requests.exceptions.SSLError as e:
-        print(f"SSL error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
