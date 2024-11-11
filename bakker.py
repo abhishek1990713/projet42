@@ -89,59 +89,36 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-# api2_client.py
+import socket
+import ssl
 
-from ultralytics import YOLO
+# Server certificate and key files
+CERTFILE = 'certificate.pem'
+KEYFILE = 'private.key'
+PASSWORD = 'your_password_here'  # Replace with your actual password for the key
 
-def process_dl_image(model_path, input_file_path, confidence_threshold=0.70, output_filename="test_result.jpg"):
-    # Load the YOLO model
-    model = YOLO(model_path)
-    
-    # Run the model on the input image
-    results = model(input_file_path)
-    
-    # Flags for validation checks
-    all_boxes_present = False
-    confidence_check = False
-    
-    for result in results:
-        # Extract bounding boxes and other outputs
-        boxes = result.boxes  # Bounding boxes
-        masks = result.masks  # Segmentation masks
-        keypoints = result.keypoints  # Pose keypoints
-        probs = result.probs  # Classification probabilities
-        obb = result.obb  # Oriented bounding boxes
-        
-        # Show the result and save it
-        result.show()  # Display on screen
-        result.save(filename=output_filename)  # Save to disk
-        print(f"Result saved as {output_filename}")
-        
-        # Check if required bounding boxes are present
-        if boxes is not None and len(boxes) == 4:
-            all_boxes_present = True
-            print("All four bounding boxes are present.")
-        else:
-            print("Not all four bounding boxes are present.")
-        
-        # Check confidence scores
-        confidence_scores = boxes.conf if boxes is not None else []
-        if all(score >= confidence_threshold for score in confidence_scores):
-            confidence_check = True
-            print(f"All confidence scores are above the threshold of {confidence_threshold}.")
-        else:
-            print(f"Some confidence scores are below the threshold of {confidence_threshold}.")
-    
-    # Final check based on conditions
-    if all_boxes_present and confidence_check:
-        print("Image is uploaded correctly.")
-    else:
-        print("Image is not good.")
+# Set up the server socket with SSL
+context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+context.verify_mode = ssl.CERT_REQUIRED
+context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=PASSWORD)
+context.load_verify_locations('client_cert.pem')  # Client certificate to verify
 
-# Example usage
-process_dl_image(
-    model_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\best_DL.pt",
-    input_file_path=r"C:\CitiDev\text_ocr\image_quality\test_data\6f7rch30.png",
-    confidence_threshold=0.70,
-    output_filename="test_result.jpg"
-)
+# Create socket and wrap it in SSL
+bindsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+bindsocket.bind(('localhost', 8443))
+bindsocket.listen(5)
+
+print("Server is listening on port 8443...")
+
+while True:
+    newsocket, fromaddr = bindsocket.accept()
+    with context.wrap_socket(newsocket, server_side=True) as conn:
+        print(f"Connection from {fromaddr} established with TLS")
+        try:
+            data = conn.recv(1024)
+            print("Received:", data.decode())
+            conn.sendall(b"Hello, client")
+        except ssl.SSLError as e:
+            print(f"SSL error: {e}")
+        finally:
+            conn.close()
