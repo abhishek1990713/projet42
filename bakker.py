@@ -92,20 +92,18 @@ if __name__ == '__main__':
 # api2_client.py
 
 from ultralytics import YOLO
-import os
 
-def process_image(model_path, input_file_path, confidence_threshold=0.70, output_filename="test_result.jpg"):
+def process_dl_image(model_path, input_file_path, confidence_threshold=0.70, output_filename="test_result.jpg"):
     # Load the YOLO model
     model = YOLO(model_path)
     
     # Run the model on the input image
     results = model(input_file_path)
     
-    # Flags to check conditions
+    # Flags for validation checks
     all_boxes_present = False
     confidence_check = False
     
-    # Process results
     for result in results:
         # Extract bounding boxes and other outputs
         boxes = result.boxes  # Bounding boxes
@@ -130,9 +128,9 @@ def process_image(model_path, input_file_path, confidence_threshold=0.70, output
         confidence_scores = boxes.conf if boxes is not None else []
         if all(score >= confidence_threshold for score in confidence_scores):
             confidence_check = True
-            print("All confidence scores are above the threshold of 0.70.")
+            print(f"All confidence scores are above the threshold of {confidence_threshold}.")
         else:
-            print("Some confidence scores are below the threshold of 0.70.")
+            print(f"Some confidence scores are below the threshold of {confidence_threshold}.")
     
     # Final check based on conditions
     if all_boxes_present and confidence_check:
@@ -141,9 +139,9 @@ def process_image(model_path, input_file_path, confidence_threshold=0.70, output
         print("Image is not good.")
 
 # Example usage
-process_image(
-    model_path=r"C:\CitiDev\DOC_OCR\Data_set\runs\detect\train\weights\best.pt",
-    input_file_path=r"C:\CitiDev\Japne_classification\dataset\test_data\RC\v4na4xm1.png",
+process_dl_image(
+    model_path=r"C:\CitiDev\text_ocr\image_quality\yolo_model\best_DL.pt",
+    input_file_path=r"C:\CitiDev\text_ocr\image_quality\test_data\6f7rch30.png",
     confidence_threshold=0.70,
     output_filename="test_result.jpg"
 )
