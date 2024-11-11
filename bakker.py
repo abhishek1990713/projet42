@@ -89,43 +89,48 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
-from flask import Flask, jsonify, request
-import ssl
-
-app = Flask(__name__)
-
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    return jsonify({"message": "Hello, Client! You are authenticated via mTLS."})
-
-if __name__ == "__main__":
-    # SSL configuration
-    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    context.verify_mode = ssl.CERT_REQUIRED  # Enforce client certificate verification
-    context.load_cert_chain(certfile='certificate.pem', keyfile='private.key', password='your_password_here')
-    context.load_verify_locations('client_cert.pem')  # Trust the client's certificate
-
-    # Start the Flask app with SSL enabled
-    app.run(host='0.0.0.0', port=8443, ssl_context=context)
-
-
 import socket
 import ssl
+import requests
 
-# Client certificate and key files
+# Path to the client certificate and private key
 CERTFILE = 'certificate.pem'
 KEYFILE = 'private.key'
-PASSWORD = 'your_password_here'  # Replace with your actual password for the key
+SERVER_CERT = 'server_cert.pem'  # Server's self-signed certificate
 
-# Set up the client socket with SSL
-context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=PASSWORD)
-context.load_verify_locations('server_cert.pem')  # Server certificate to verify
+# Flask server URL
+url = 'https://127.0.0.1:8443/api/data'
 
-# Create socket and wrap it in SSL
-with socket.create_connection(('localhost', 8443)) as sock:
-    with context.wrap_socket(sock, server_hostname='localhost') as ssock:
-        print("Client connected to server with TLS")
-        ssock.sendall(b"Hello, server")
-        data = ssock.recv(1024)
-        print("Received:", data.decode())
+# Send a GET request with the client certificate for mTLS
+try:
+    # Using requests to connect securely with the server, bypassing the verification of the server certificate.
+    response = requests.get(
+        url,
+        cert=(CERTFILE, KEYFILE),  # Client cert and key for mTLS
+        verify=False  # Disable server certificate verification (not recommended for production)
+    )
+    print("Response from server:", response.json())
+except requests.exceptions.SSLError as e:
+    print("SSL error:", e)
+except Exception as e:
+    print("Error:", e)
+
+# For direct SSL socket connection without using requests (in case you need raw socket connection)
+# This is how you can disable certificate verification using raw SSL sockets.
+
+try:
+    # Create SSL context and configure it
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE)
+    context.check_hostname = False  # Disable hostname checking (optional)
+    context.verify_mode = ssl.CERT_NONE  # Disable server certificate verification
+
+    # Establish connection to Flask server
+    with socket.create_connection(('127.0.0.1', 8443)) as sock:
+        with context.wrap_socket(sock, server_hostname='127.0.0.1') as ssock:
+            print("Connected to server securely (no certificate verification).")
+            ssock.sendall(b"Hello, server")
+            data = ssock.recv(1024)
+            print("Received:", data.decode())
+except Exception as e:
+    print("Socket error:", e)
