@@ -101,42 +101,58 @@ KEY_PASSWORD = 'your_password_here'  # Password for the private key (replace wit
 SERVER_CERT = 'server_cert.pem'  # Path to the server's certificate (optional for testing)
 
 # Flask server URL
-url = 'https://127.0.0.1:8443/api/data'
+url = 'https://127.0.0.1:8013/api/data'
 
-# Send a GET request with the client certificate for mTLS (using requests with cert and key)
-try:
-    # Using requests to connect securely with the server, bypassing the verification of the server certificate.
-    response = requests.get(
-        url,
-        cert=(CERTFILE, KEYFILE),  # Client cert and key for mTLS
-        verify=SERVER_CERT  # Verify the server certificate (if you have it, or set to False for testing)
-    )
-    print("Response from server:", response.json())
-except requests.exceptions.SSLError as e:
-    print("SSL error:", e)
-except Exception as e:
-    print("Error:", e)
+# Function to handle requests using requests library with mTLS
+def request_with_mtls():
+    try:
+        # Using requests to connect securely with the server, bypassing the verification of the server certificate.
+        response = requests.get(
+            url,
+            cert=(CERTFILE, KEYFILE),  # Client cert and key for mTLS
+            verify=SERVER_CERT  # Verify the server certificate (if you have it, or set to False for testing)
+        )
+        print("Response from server:", response.json())
+    except requests.exceptions.SSLError as e:
+        print("SSL error in requests:", e)
+    except Exception as e:
+        print("Error in requests:", e)
 
-# For direct SSL socket connection without using requests (handling raw SSL sockets)
-try:
-    # Create SSL context and configure it
-    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    
-    # Load the client certificate and private key with a password for the private key
-    context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=KEY_PASSWORD)
-    
-    # Optionally, disable hostname checking and server certificate verification for testing
-    context.check_hostname = False  # Disable hostname checking (optional)
-    
-    # Specify the server's certificate (if using self-signed or custom CA)
-    context.load_verify_locations(cafile=SERVER_CERT)  # If the server's certificate is not trusted by default
+# Function to handle raw SSL socket connection
+def ssl_socket_connection():
+    try:
+        # Create SSL context and configure it
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
 
-    # Establish connection to Flask server
-    with socket.create_connection(('127.0.0.1', 8443)) as sock:
-        with context.wrap_socket(sock, server_hostname='127.0.0.1') as ssock:
-            print("Connected to server securely (using specified server cert).")
-            ssock.sendall(b"Hello, server")
-            data = ssock.recv(1024)
-            print("Received:", data.decode())
-except Exception as e:
-    print("Socket error:", e)
+        # Load the client certificate and private key with a password for the private key
+        context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=KEY_PASSWORD)
+
+        # Optionally, disable hostname checking and server certificate verification for testing
+        context.check_hostname = False  # Disable hostname checking (optional)
+
+        # Specify the server's certificate (if using self-signed or custom CA)
+        context.load_verify_locations(cafile=SERVER_CERT)  # If the server's certificate is not trusted by default
+
+        # Force a specific SSL/TLS version (e.g., TLSv1.2 or TLSv1.3) if needed
+        context.options |= ssl.OP_NO_TLSv1_1  # Disable TLSv1.1 if necessary (Optional)
+        context.set_ciphers('ECDHE-RSA-AES128-GCM-SHA256')  # You can set a specific cipher suite
+
+        # Establish connection to Flask server
+        with socket.create_connection(('127.0.0.1', 8013)) as sock:
+            with context.wrap_socket(sock, server_hostname='127.0.0.1') as ssock:
+                print("Connected to server securely (using specified server cert).")
+                ssock.sendall(b"Hello, server")
+                data = ssock.recv(1024)
+                print("Received:", data.decode())
+    except Exception as e:
+        print("Socket error:", e)
+
+# Main execution
+if __name__ == "__main__":
+    # First attempt using requests library
+    print("Sending GET request using requests library with mTLS...")
+    request_with_mtls()
+
+    # Then attempt using raw SSL socket connection
+    print("\nAttempting raw SSL socket connection...")
+    ssl_socket_connection()
