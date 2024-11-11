@@ -89,36 +89,43 @@ def Upload():
 if __name__ == '__main__':
     app.run(debug=True)
     #app.run(host='0.0.0.0', port=6000, debug=True)
+from flask import Flask, jsonify, request
+import ssl
+
+app = Flask(__name__)
+
+@app.route('/api/data', methods=['GET'])
+def get_data():
+    return jsonify({"message": "Hello, Client! You are authenticated via mTLS."})
+
+if __name__ == "__main__":
+    # SSL configuration
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.verify_mode = ssl.CERT_REQUIRED  # Enforce client certificate verification
+    context.load_cert_chain(certfile='certificate.pem', keyfile='private.key', password='your_password_here')
+    context.load_verify_locations('client_cert.pem')  # Trust the client's certificate
+
+    # Start the Flask app with SSL enabled
+    app.run(host='0.0.0.0', port=8443, ssl_context=context)
+
+
 import socket
 import ssl
 
-# Server certificate and key files
+# Client certificate and key files
 CERTFILE = 'certificate.pem'
 KEYFILE = 'private.key'
 PASSWORD = 'your_password_here'  # Replace with your actual password for the key
 
-# Set up the server socket with SSL
-context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-context.verify_mode = ssl.CERT_REQUIRED
+# Set up the client socket with SSL
+context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=PASSWORD)
-context.load_verify_locations('client_cert.pem')  # Client certificate to verify
+context.load_verify_locations('server_cert.pem')  # Server certificate to verify
 
 # Create socket and wrap it in SSL
-bindsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-bindsocket.bind(('localhost', 8443))
-bindsocket.listen(5)
-
-print("Server is listening on port 8443...")
-
-while True:
-    newsocket, fromaddr = bindsocket.accept()
-    with context.wrap_socket(newsocket, server_side=True) as conn:
-        print(f"Connection from {fromaddr} established with TLS")
-        try:
-            data = conn.recv(1024)
-            print("Received:", data.decode())
-            conn.sendall(b"Hello, client")
-        except ssl.SSLError as e:
-            print(f"SSL error: {e}")
-        finally:
-            conn.close()
+with socket.create_connection(('localhost', 8443)) as sock:
+    with context.wrap_socket(sock, server_hostname='localhost') as ssock:
+        print("Client connected to server with TLS")
+        ssock.sendall(b"Hello, server")
+        data = ssock.recv(1024)
+        print("Received:", data.decode())
