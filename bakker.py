@@ -93,10 +93,11 @@ import socket
 import ssl
 import requests
 
-# Path to the client certificate and private key
+# Paths to the client certificate and private key, along with the password for the private key
 CERTFILE = 'certificate.pem'
 KEYFILE = 'private.key'
-SERVER_CERT = 'server_cert.pem'  # Server's self-signed certificate
+KEY_PASSWORD = 'your_password_here'  # Password for the private key
+SERVER_CERT = 'server_cert.pem'  # Server's self-signed certificate (optional for testing)
 
 # Flask server URL
 url = 'https://127.0.0.1:8443/api/data'
@@ -121,7 +122,11 @@ except Exception as e:
 try:
     # Create SSL context and configure it
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE)
+    
+    # Load the client certificate and private key with a password for the private key
+    context.load_cert_chain(certfile=CERTFILE, keyfile=KEYFILE, password=KEY_PASSWORD)
+    
+    # Optionally, disable hostname checking and server certificate verification for testing
     context.check_hostname = False  # Disable hostname checking (optional)
     context.verify_mode = ssl.CERT_NONE  # Disable server certificate verification
 
