@@ -20,6 +20,7 @@ if __name__ == '__main__':
 from ultralytics import YOLO
 from PIL import Image
 import pytesseract
+from datetime import datetime
 
 # Define model path and input file path
 model_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\best.pt"
@@ -27,6 +28,10 @@ input_file_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\bge9m4
 
 # Define class names
 class_names = {0: 'Date_Of_Issue', 1: 'Date_Of_Expiry', 2: 'Name', 3: 'Nationality', 4: 'Passport_No'}
+
+# Define date validation parameters
+valid_issue_date = datetime.strptime("22 Aug 2018", "%d %b %Y")
+valid_expiry_date = datetime.strptime("22 Aug 2028", "%d %b %Y")
 
 # Load the model
 model = YOLO(model_path)
@@ -36,6 +41,10 @@ results = model(input_file_path)
 
 # Load the input image using PIL
 input_image = Image.open(input_file_path)
+
+# Initialize variables to store date values
+date_of_issue = None
+date_of_expiry = None
 
 # Process results list
 for result in results:
@@ -52,9 +61,31 @@ for result in results:
         cropped_image.show(title=label)  # Display the cropped region
 
         # Perform OCR on the cropped image
-        extracted_text = pytesseract.image_to_string(cropped_image)
+        extracted_text = pytesseract.image_to_string(cropped_image).strip()
         print(f"Detected {label}: {extracted_text}")
+
+        # Parse dates if the detected field is Date of Issue or Date of Expiry
+        if label == "Date_Of_Issue":
+            try:
+                date_of_issue = datetime.strptime(extracted_text, "%d %b %Y")
+            except ValueError:
+                print(f"Could not parse Date of Issue: {extracted_text}")
+        
+        elif label == "Date_Of_Expiry":
+            try:
+                date_of_expiry = datetime.strptime(extracted_text, "%d %b %Y")
+            except ValueError:
+                print(f"Could not parse Date of Expiry: {extracted_text}")
 
     # Optionally, save or display the full annotated result
     result.show()  # Display result with bounding boxes
     result.save(filename="test_result.jpg")  # Save to disk
+
+# Validate dates based on the conditions provided
+if date_of_issue and date_of_expiry:
+    if valid_issue_date <= date_of_issue <= valid_expiry_date and date_of_expiry <= valid_expiry_date:
+        print("Passport is valid within the given date range.")
+    else:
+        print("Passport dates do not fall within the valid range.")
+else:
+    print("One or both dates could not be extracted or are invalid.")
