@@ -17,31 +17,22 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-from ultralytics import YOLO
+import re
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 from paddleocr import PaddleOCR
-from datetime import datetime
 
 # Initialize PaddleOCR for Japanese language
-ocr = PaddleOCR(lang='japan', use_angle_cls=True)
+ocr = PaddleOCR(lang='japan')
 
 # Define model path and input file path
 model_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\best.pt"
 input_file_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\japan_document.png"
 
-# Define class names (for Japanese documents)
-class_names = {
-    0: 'Date_Of_Issue',
-    1: 'Date_Of_Expiry',
-    2: 'Name',
-    3: 'Nationality',
-    4: 'Passport_No'
-}
-
-# Condition for expiration date
-valid_expiry_date = datetime.strptime("2028-08-22", "%Y-%m-%d")
+# Expiration year condition
+min_expire_year = 2024
+max_expire_year = 2028
 
 # Load the YOLO model
 model = YOLO(model_path)
@@ -57,9 +48,8 @@ for result in results:
     boxes = result.boxes  # Bounding box outputs
 
     # Loop through each detected object
-    for box in boxes:
-        cls_id = int(box.cls[0])  # Class ID
-        label = class_names.get(cls_id, "Unknown")  # Get label for the class ID
+    for i, box in enumerate(boxes):
+        cls_name = result.names[int(box.cls[0])]  # Dynamically predict the class name
         bbox = box.xyxy[0].tolist()  # Get bounding box coordinates [x_min, y_min, x_max, y_max]
 
         # Crop the bounding box region from the input image
@@ -73,19 +63,21 @@ for result in results:
 
         # Extract text
         extracted_text = " ".join([text[1][0] for text in result_texts[0]]) if result_texts else ""
-        print(f"Detected {label}: {extracted_text}")
 
-        # Apply condition for 'Date_Of_Expiry'
-        if label == "Date_Of_Expiry":
-            try:
-                # Parse the expiration date in the detected text
-                # Adjust the parsing to match the format of your detected text
-                expiry_date = datetime.strptime(
-                    extracted_text.replace("まで有宛", "").strip(), "%Y年%m月%d日"
-                )
-                if expiry_date < valid_expiry_date:
-                    print(f"Expiration date {expiry_date.strftime('%Y-%m-%d')} is valid.")
+        print(f"Detected {cls_name}: {extracted_text}")
+
+        # Apply the expiration year condition only to "Date of Expire"
+        if cls_name == "Date of Expire":  # Ensure the class name matches dynamically detected name
+            # Use regex to extract only the year (e.g., '2024年')
+            year_match = re.search(r"\d{4}年", extracted_text)
+            if year_match:
+                year = int(year_match.group(0).replace("年", ""))  # Extract year as an integer
+                print(f"Extracted Year: {year}")
+
+                # Validate expiration year
+                if min_expire_year <= year <= max_expire_year:
+                    print(f"Year {year} is within the valid range ({min_expire_year}-{max_expire_year}).")
                 else:
-                    print(f"Expiration date {expiry_date.strftime('%Y-%m-%d')} exceeds the valid range.")
-            except ValueError:
-                print("Could not parse the expiration date.")
+                    print(f"Year {year} is outside the valid range ({min_expire_year}-{max_expire_year}).")
+            else:
+                print("Year not found in 'Date of Expire'.")
