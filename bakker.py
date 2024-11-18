@@ -17,3 +17,82 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
+import re
+from ultralytics import YOLO
+from PIL import Image
+import numpy as np
+from paddleocr import PaddleOCR
+
+# Initialize PaddleOCR for Japanese language
+ocr = PaddleOCR(lang='japan')
+
+# Expiration year condition
+MIN_EXPIRE_YEAR = 2024
+MAX_EXPIRE_YEAR = 2028
+
+# Function to process a document
+def process_document(model_path, input_file_path):
+    """
+    Process a document to detect regions, extract text, and validate expiration year.
+    
+    Args:
+        model_path (str): Path to the YOLO model file.
+        input_file_path (str): Path to the input image file.
+    
+    Returns:
+        None
+    """
+    # Load the YOLO model
+    model = YOLO(model_path)
+
+    # Perform inference on the input image
+    results = model(input_file_path)
+
+    # Load the input image using PIL
+    input_image = Image.open(input_file_path)
+
+    # Process results list
+    for result in results:
+        boxes = result.boxes  # Bounding box outputs
+
+        # Loop through each detected object
+        for i, box in enumerate(boxes):
+            cls_name = result.names[int(box.cls[0])]  # Dynamically predict the class name
+            bbox = box.xyxy[0].tolist()  # Get bounding box coordinates [x_min, y_min, x_max, y_max]
+
+            # Crop the bounding box region from the input image
+            cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+
+            # Convert PIL Image to numpy array for PaddleOCR compatibility
+            cropped_image_np = np.array(cropped_image)
+
+            # Perform OCR using PaddleOCR
+            result_texts = ocr.ocr(cropped_image_np, cls=False)
+
+            # Extract text
+            extracted_text = " ".join([text[1][0] for text in result_texts[0]]) if result_texts else ""
+
+            print(f"Detected {cls_name}: {extracted_text}")
+
+            # Apply the expiration year condition only to "Date of Expire"
+            if cls_name == "Date of Expire":  # Ensure the class name matches dynamically detected name
+                # Use regex to extract only the year (e.g., '2024年')
+                year_match = re.search(r"\d{4}年", extracted_text)
+                if year_match:
+                    year = int(year_match.group(0).replace("年", ""))  # Extract year as an integer
+                    print(f"Extracted Year: {year}")
+
+                    # Validate expiration year
+                    if MIN_EXPIRE_YEAR <= year <= MAX_EXPIRE_YEAR:
+                        print(f"Year {year} is within the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                    else:
+                        print(f"Year {year} is outside the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                else:
+                    print("Year not found in 'Date of Expire'.")
+
+# Paths to model and input image
+model_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\best.pt"
+input_file_path = "C:\\CitiDev\\text_ocr\\image_quality\\yolo_model\\src\\japan_document.png"
+
+# Call the function to process the document
+process_document(model_path, input_file_path)
