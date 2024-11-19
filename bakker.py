@@ -39,57 +39,46 @@ logger = logging.getLogger()
 
 def process_image_pipeline(image_path, classifier, timeout=30):
     try:
-        start_time = time.time()
         logger.info(f"Processing started for image: {image_path}")
 
         def process():
-            # Open and convert the image to a NumPy array
             img = Image.open(image_path)
             img_ndarray = np.asarray(img)
 
             # Check image quality using BRISQUE
             obj = BRISQUE(url=False)
             score = obj.score(img_ndarray)
-            logger.info(f"BRISQUE Score for {image_path}: {score}")
 
             if score >= 60:
-                logger.warning("Image quality is poor. Skipping processing.")
-                return "The image quality is not good and cannot be processed for classification."
+                return "The image quality is not good and cannot be processed."
 
-            logger.info("The image is sharp. Proceeding with classification...")
             classification_result = classifier.predict(image_path)
 
             if classification_result:
                 predicted_label = classification_result['predicted_label']
                 confidence = classification_result['confidence']
-                logger.info(f"Predicted Class: {predicted_label} (Confidence: {confidence:.2f})")
 
                 if predicted_label == 'driving license':
                     output = process_dl_image(image_path)
                     if output == 'Image is not good.':
-                        logger.error("Driving license image is not good for processing.")
-                        return None
-                    return process_dl_image(image_path), process_dl_information(image_path)
+                        return "Driving license image quality is not sufficient."
+                    return process_dl_information(image_path)
 
                 elif predicted_label == 'passport':
                     output = process_passport_image(image_path)
                     if output == 'Image is not good.':
-                        logger.error("Passport image is not good for processing.")
-                        return None
-                    return process_passport_image(image_path), process_Passport_information(image_path)
+                        return "Passport image quality is not sufficient."
+                    return process_Passport_information(image_path)
 
                 elif predicted_label == 'residence_card':
                     output = process_rc_image(image_path)
                     if output == 'Image is not good.':
-                        logger.error("Residence card image is not good for processing.")
-                        return None
-                    return process_rc_image(image_path), process_RC_information(image_path)
+                        return "Residence card image quality is not sufficient."
+                    return process_RC_information(image_path)
 
                 else:
-                    logger.warning("No processing function for the predicted class.")
-                    return "Class not recognized for further processing."
+                    return "Class not recognized for processing."
             else:
-                logger.error("Image classification failed.")
                 return "Image classification failed."
 
         # Run the process with a timeout
@@ -97,15 +86,13 @@ def process_image_pipeline(image_path, classifier, timeout=30):
             future = executor.submit(process)
             result = future.result(timeout=timeout)
 
-        logger.info(f"Processing completed for image: {image_path}")
         return result
 
     except TimeoutError:
-        logger.error(f"Processing timed out for image: {image_path}")
         return "Processing timed out."
 
     except Exception as e:
-        logger.exception(f"An error occurred while processing {image_path}: {str(e)}")
+        logger.exception(f"Error processing image {image_path}: {e}")
         return "An error occurred during processing."
 
 # Model path and class indices
