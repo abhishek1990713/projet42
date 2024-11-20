@@ -17,6 +17,7 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
+
 import os
 import numpy as np
 from PIL import Image
@@ -27,7 +28,7 @@ from allmodel_test import ImageClassifier
 from japan_kayords import process_dl_image, process_rc_image, process_passport_image
 from japan_information import process_dl_information, process_Passport_information, process_RC_information
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-import time
+import fitz  # PyMuPDF for PDF processing
 
 # Configure Logger
 logging.basicConfig(
@@ -37,7 +38,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
-def process_image_pipeline(image_path, classifier, timeout=30):
+def process_image(image_path, classifier, timeout=30):
+    """Process a single image using the existing pipeline."""
     try:
         logger.info(f"Processing started for image: {image_path}")
 
@@ -95,6 +97,43 @@ def process_image_pipeline(image_path, classifier, timeout=30):
         logger.exception(f"Error processing image {image_path}: {e}")
         return "An error occurred during processing."
 
+def process_pdf(pdf_path, classifier, timeout=30):
+    """Process a PDF by extracting pages and running the pipeline."""
+    try:
+        logger.info(f"Processing started for PDF: {pdf_path}")
+        document = fitz.open(pdf_path)
+        results = []
+
+        for page_num in range(len(document)):
+            # Convert each page to an image
+            page = document.load_page(page_num)
+            pix = page.get_pixmap()
+            image_path = f"temp_page_{page_num + 1}.png"
+            pix.save(image_path)
+
+            # Process the extracted image
+            logger.info(f"Processing page {page_num + 1} of {pdf_path}")
+            result = process_image(image_path, classifier, timeout)
+            results.append(f"Page {page_num + 1}: {result}")
+
+            # Remove the temporary image file
+            os.remove(image_path)
+
+        return "\n".join(results)
+
+    except Exception as e:
+        logger.exception(f"Error processing PDF {pdf_path}: {e}")
+        return "An error occurred during PDF processing."
+
+def process_input_file(file_path, classifier, timeout=30):
+    """Determine if the input is an image or PDF and process accordingly."""
+    if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+        return process_image(file_path, classifier, timeout)
+    elif file_path.lower().endswith('.pdf'):
+        return process_pdf(file_path, classifier, timeout)
+    else:
+        return "Unsupported file format. Please provide an image or PDF."
+
 # Model path and class indices
 model_path = r"C:\CitiDev\text_ocr\image_quality\japan_pipeline\model\inception_v3_model_newtrain_japan.h5"
 class_indices = {0: 'driving license', 1: 'others', 2: 'passport', 3: 'residence_card'}
@@ -102,9 +141,9 @@ class_indices = {0: 'driving license', 1: 'others', 2: 'passport', 3: 'residence
 # Initialize the classifier
 classifier = ImageClassifier(model_path, class_indices)
 
-# Example image path
-image_path = r"C:\CitiDev\text_ocr\image_quality\japan_pipeline\Test image\augmented_me_bge9m4lu.png"
+# Example file path (image or PDF)
+file_path = r"C:\CitiDev\text_ocr\image_quality\japan_pipeline\Test image\example_file.pdf"
 
-# Process the image
-result_message = process_image_pipeline(image_path, classifier)
+# Process the input file
+result_message = process_input_file(file_path, classifier)
 print(result_message)
