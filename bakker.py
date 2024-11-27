@@ -16,72 +16,65 @@ if __name__ == '__main__':
     
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
-import cv2
+import logging
+from datetime import datetime
+from PIL import Image
+import numpy as np
+from ultralytics import YOLO
+import pytesseract
 
-def calculate_blurriness(image):
-    return cv2.Laplacian(image, cv2.CV_64F).var()
+logging.basicConfig(level=logging.WARNING)
 
-def calculate_noise(image):
-    return 0.1  # Placeholder value
+# Set paths
+valid_issue_date = datetime.strptime("22 AUG 2010", "%d %b %Y")
+valid_expiry_date = datetime.strptime("22 AUG 2029", "%d %b %Y")
 
-def calculate_brightness(image):
-    return image.mean()
+def process_passport_information(input_file_path):
+    model_path = r"C:\Users\AS34751\Downloads\best.pt"
+    model = YOLO(model_path)
 
-def calculate_contrast(image):
-    return image.max() - image.min()
+    # Load the image
+    results = model(input_file_path)
+    input_image = Image.open(input_file_path)
 
-def calculate_text_density(image):
-    return 0.05  # Placeholder value
+    date_of_issue = None
+    date_of_expiry = None
 
-def check_image_quality(image_path, thresholds=None):
-    if thresholds is None:
-        thresholds = {
-            "blurriness": 4000,
-            "noise": 0.2,
-            "brightness_low": 200,
-            "brightness_high": 500,
-            "contrast": 200,
-            "text_density": 0.04
-        }
+    for result in results:
+        boxes = result.boxes
+        result.show()
 
-    image = cv2.imread(image_path)
-    if image is None:
-        return "Image not found or invalid format"
+        for box in boxes:
+            cls_id = int(box.cls[0])
+            label = result.names[cls_id]
+            bbox = box.xyxy[0].tolist()
 
-    # Quality metrics calculation
-    blurriness = calculate_blurriness(image)
-    noise_level = calculate_noise(image)
-    brightness = calculate_brightness(image)
-    contrast = calculate_contrast(image)
-    text_density = calculate_text_density(image)
+            # Crop the detected region
+            cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
 
-    # Quality checks
-    quality_checks = {
-        "blurriness": blurriness > thresholds["blurriness"],
-        "noise": noise_level < thresholds["noise"],
-        "brightness": thresholds["brightness_low"] <= brightness <= thresholds["brightness_high"],
-        "contrast": contrast > thresholds["contrast"],
-        "text_density": text_density > thresholds["text_density"]
-    }
+            # Convert the cropped image to numpy array for OCR
+            cropped_image_np = np.array(cropped_image)
 
-    # Count how many conditions are True
-    true_conditions = sum(quality_checks.values())
+            # Perform OCR using PyTesseract
+            extracted_text = pytesseract.image_to_string(cropped_image_np, lang="eng").strip()
 
-    # Image quality determination
-    image_quality = "Good" if true_conditions >= 3 else "Bad"
+            print(f"Detected {label}: {extracted_text}")
 
-    return {
-        "quality_checks": quality_checks,
-        "true_conditions": true_conditions,
-        "image_quality": image_quality
-    }
+            # Parse dates if applicable
+            if label == "Date of issue":
+                try:
+                    date_of_issue = datetime.strptime(extracted_text, "%d %b %Y")
+                except ValueError:
+                    print(f"Could not parse Date of Issue: {extracted_text}")
+            elif label == "Date of expiry":
+                try:
+                    date_of_expiry = datetime.strptime(extracted_text, "%d %b %Y")
+                except ValueError:
+                    print(f"Could not parse Date of Expiry: {extracted_text}")
+
+    # Print results
+    print(f"Date of Issue: {date_of_issue}")
+    print(f"Date of Expiry: {date_of_expiry}")
 
 # Example usage
-image_path = r"C:\CitiDev Projects\Trade_data\AB\310093900 21530315_1_2303786310093900.007.tiff"
-quality_report = check_image_quality(image_path)
-
-for key, value in quality_report["quality_checks"].items():
-    print(f"{key}: {value}")
-
-print(f"True Conditions: {quality_report['true_conditions']}")
-print(f"Image Quality: {quality_report['image_quality']}")
+process_passport_information(r"C:\path_to_your_image\passport_image.jpg")
