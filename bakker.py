@@ -17,28 +17,14 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-import cv2
-import numpy as np
-
-def calculate_blurriness(image):
-    # Ensure the input image is valid
-    if len(image.shape) == 3:  # Check if the image is color (3 channels)
+def calculate_noise(image):
+    # Ensure the image is in grayscale format
+    if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image  # Already grayscale
-    return cv2.Laplacian(gray, cv2.CV_64F).var()
-
-def calculate_noise(image):
-    return 0.1  # Placeholder for noise calculation
-
-def calculate_brightness(image):
-    return image.mean()
-
-def calculate_contrast(image):
-    return image.max() - image.min()
-
-def calculate_text_density(image):
-    return 0.05  # Placeholder for text density calculation
+    # Placeholder noise calculation (replace with your logic)
+    return np.std(gray)
 
 def advanced_preprocess_image(image):
     """
@@ -63,7 +49,9 @@ def advanced_preprocess_image(image):
     gaussian_blurred = cv2.GaussianBlur(enhanced_contrast, (9, 9), 10.0)
     sharpened = cv2.addWeighted(enhanced_contrast, 1.5, gaussian_blurred, -0.5, 0)
 
-    return sharpened
+    # Convert back to 3-channel format for downstream compatibility
+    processed_image = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
+    return processed_image
 
 def check_image_quality(image, thresholds=None):
     if thresholds is None:
@@ -76,7 +64,7 @@ def check_image_quality(image, thresholds=None):
             "text_density": 0.04
         }
 
-    # Ensure image is valid and in the correct format
+    # Ensure the image is valid
     if image is None or image.size == 0:
         return "Bad"
 
