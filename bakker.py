@@ -17,23 +17,13 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-import cv2
-import numpy as np
-
 def calculate_blurriness(image):
-    return cv2.Laplacian(image, cv2.CV_64F).var()
-
-def calculate_noise(image):
-    return 0.1  # Placeholder value
-
-def calculate_brightness(image):
-    return image.mean()
-
-def calculate_contrast(image):
-    return image.max() - image.min()
-
-def calculate_text_density(image):
-    return 0.05  # Placeholder value
+    # Convert to grayscale if the image is not already grayscale
+    if len(image.shape) == 3:  # Check if the image has 3 channels
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image  # Already grayscale
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
 
 def advanced_preprocess_image(image):
     """
@@ -42,8 +32,11 @@ def advanced_preprocess_image(image):
     2. CLAHE for adaptive contrast enhancement
     3. Unsharp Masking for sharpening
     """
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Convert to grayscale if the image is not already grayscale
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
 
     # 1. Non-Local Means Denoising (advanced noise reduction)
     denoised = cv2.fastNlMeansDenoising(gray, None, h=30, templateWindowSize=7, searchWindowSize=21)
@@ -57,66 +50,3 @@ def advanced_preprocess_image(image):
     sharpened = cv2.addWeighted(enhanced_contrast, 1.5, gaussian_blurred, -0.5, 0)
 
     return sharpened
-
-def check_image_quality(image, thresholds=None):
-    if thresholds is None:
-        thresholds = {
-            "blurriness": 4000,
-            "noise": 0.2,
-            "brightness_low": 200,
-            "brightness_high": 500,
-            "contrast": 200,
-            "text_density": 0.04
-        }
-
-    # Quality metrics calculation
-    blurriness = calculate_blurriness(image)
-    noise_level = calculate_noise(image)
-    brightness = calculate_brightness(image)
-    contrast = calculate_contrast(image)
-    text_density = calculate_text_density(image)
-
-    # Quality checks
-    quality_checks = {
-        "blurriness": blurriness > thresholds["blurriness"],
-        "noise": noise_level < thresholds["noise"],
-        "brightness": thresholds["brightness_low"] <= brightness <= thresholds["brightness_high"],
-        "contrast": contrast > thresholds["contrast"],
-        "text_density": text_density > thresholds["text_density"]
-    }
-
-    # Count how many conditions are True
-    true_conditions = sum(quality_checks.values())
-
-    # Determine image quality
-    return "Good" if true_conditions >= 3 else "Bad"
-
-def process_image(image_path, max_attempts=2):
-    """Main function to process image quality with iterative improvement."""
-    image = cv2.imread(image_path)
-    if image is None:
-        print("Image not found or invalid format.")
-        return "Error"
-
-    for attempt in range(max_attempts):
-        print(f"Attempt {attempt + 1}: Checking image quality...")
-        result = check_image_quality(image)
-
-        if result == "Good":
-            print("Image is Good.")
-            return "Good"
-
-        print("Image is Bad. Applying preprocessing...")
-        image = advanced_preprocess_image(image)
-
-    print("Image quality could not be improved further.")
-    return "Bad"
-
-# Example usage
-image_path = r"C:\CitiDev Projects\Trade_data\AB\310093900 21530315_1_2303786310093900.007.tiff"
-final_result = process_image(image_path)
-
-if final_result == "Bad":
-    print("Final result: Image is Bad after two attempts.")
-elif final_result == "Good":
-    print("Final result: Image is Good.")
