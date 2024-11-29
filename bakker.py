@@ -17,42 +17,30 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-def calculate_noise(image):
-    # Ensure the image is in grayscale format
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image  # Already grayscale
-    # Placeholder noise calculation (replace with your logic)
-    return np.std(gray)
+import cv2
+import numpy as np
+import time
 
-def advanced_preprocess_image(image):
+# Super-resolution function
+def super_resolution(image):
     """
-    Advanced preprocessing to improve image quality:
-    1. Non-local Means Denoising
-    2. CLAHE for adaptive contrast enhancement
-    3. Unsharp Masking for sharpening
+    Applies super-resolution using the FSRCNN model to upscale the image.
     """
-    if len(image.shape) == 3:  # Convert to grayscale if not already grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image
+    model_path = r"C:\Citidev\SuperResolution\FSRCNN_Tensorflow-master\models\FSRCNN_x2.pb"
 
-    # 1. Non-Local Means Denoising
-    denoised = cv2.fastNlMeansDenoising(gray, None, h=30, templateWindowSize=7, searchWindowSize=21)
+    # Create and configure the super-resolution model
+    sr = cv2.dnn_superres.DnnSuperResImpl_create()
+    sr.readModel(model_path)
+    sr.setModel("fsrcnn", 2)
 
-    # 2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced_contrast = clahe.apply(denoised)
+    print("Applying super-resolution...")
+    start = time.time()
+    upscaled_image = sr.upsample(image)
+    print(f"Super-resolution completed in {time.time() - start:.2f} seconds.")
 
-    # 3. Unsharp Masking for sharpening
-    gaussian_blurred = cv2.GaussianBlur(enhanced_contrast, (9, 9), 10.0)
-    sharpened = cv2.addWeighted(enhanced_contrast, 1.5, gaussian_blurred, -0.5, 0)
+    return upscaled_image
 
-    # Convert back to 3-channel format for downstream compatibility
-    processed_image = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR)
-    return processed_image
-
+# Quality checking function
 def check_image_quality(image, thresholds=None):
     if thresholds is None:
         thresholds = {
@@ -90,6 +78,7 @@ def check_image_quality(image, thresholds=None):
     # Determine image quality
     return "Good" if true_conditions >= 3 else "Bad"
 
+# Process image function
 def process_image(image_path, max_attempts=2):
     """Main function to process image quality with iterative improvement."""
     image = cv2.imread(image_path)
@@ -105,12 +94,12 @@ def process_image(image_path, max_attempts=2):
             print("Image is Good.")
             return "Good"
 
-        print("Image is Bad. Applying preprocessing...")
-        image = advanced_preprocess_image(image)
+        print("Image is Bad. Applying super-resolution...")
+        image = super_resolution(image)
 
         # Validate the processed image
         if image is None or image.size == 0:
-            print("Preprocessing resulted in an invalid image.")
+            print("Super-resolution resulted in an invalid image.")
             return "Error"
 
     print("Image quality could not be improved further.")
