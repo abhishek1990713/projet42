@@ -71,9 +71,10 @@ def check_and_adjust_dpi_and_pixels(image_path, min_dpi=300, min_width=550, min_
         return updated_image, "Good"
 
 # SEGAN-based image enhancement
-def apply_segan_enhancement(image):
+def apply_segan_enhancement(image, save_path):
     """
     Applies SEGAN-based super-resolution to enhance the quality of the image.
+    Saves the enhanced image.
     """
     print("Applying SEGAN-based enhancement...")
 
@@ -97,6 +98,11 @@ def apply_segan_enhancement(image):
     # Enhance the image
     output, _ = upsampler.enhance(image, outscale=2)
     print("SEGAN-based enhancement applied successfully.")
+
+    # Save the enhanced image
+    cv2.imwrite(save_path, output)
+    print(f"Enhanced image saved at {save_path}")
+
     return output
 
 # Function to calculate image quality parameters
@@ -169,7 +175,7 @@ def calculate_text_density(image):
     return 0.05  # Placeholder value for text density calculation
 
 # Main process function
-def process_image(image_path, min_dpi=300, min_width=550, min_height=330):
+def process_image(image_path, save_dir, min_dpi=300, min_width=550, min_height=330):
     """
     Main function to process the image. Checks and adjusts DPI and pixel dimensions if necessary.
     """
@@ -184,7 +190,8 @@ def process_image(image_path, min_dpi=300, min_width=550, min_height=330):
     if quality_status == "Bad":
         print("Attempt 1: Image is bad. Applying SEGAN-based enhancement...")
         # Apply SEGAN-based enhancement after the first bad attempt
-        image = apply_segan_enhancement(image)
+        enhanced_image_path = os.path.join(save_dir, "enhanced_image.jpg")
+        image = apply_segan_enhancement(image, enhanced_image_path)
         # Second attempt to check the adjusted image
         quality_status = check_image_quality(image)
         if quality_status == "Bad":
@@ -199,9 +206,13 @@ def process_image(image_path, min_dpi=300, min_width=550, min_height=330):
 
 # Example usage
 image_path = r"C:\CitiDev\SuperResolution\Input Images\sample.jpg"
+save_dir = r"C:\CitiDev\SuperResolution\Enhanced_Images"
+
+# Ensure the save directory exists
+os.makedirs(save_dir, exist_ok=True)
 
 # Process the image
-image, status = process_image(image_path)
+image, status = process_image(image_path, save_dir)
 
 # Show the final image
 if image is not None:
