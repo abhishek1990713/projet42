@@ -20,7 +20,9 @@ if __name__ == '__main__':
 import cv2
 import numpy as np
 from PIL import Image
-import time
+import os
+from basicsr.archs.rrdbnet_arch import RRDBNet
+from realesrgan import RealESRGANer
 
 # Function to check and adjust DPI and pixel dimensions
 def check_and_adjust_dpi_and_pixels(image_path, min_dpi=300, min_width=550, min_height=330):
@@ -68,21 +70,34 @@ def check_and_adjust_dpi_and_pixels(image_path, min_dpi=300, min_width=550, min_
         print("Image properties are sufficient.")
         return updated_image, "Good"
 
-# Super-resolution function to improve image quality
-def apply_super_resolution(image):
+# SEGAN-based image enhancement
+def apply_segan_enhancement(image):
     """
-    Applies super-resolution to enhance the quality of the image.
+    Applies SEGAN-based super-resolution to enhance the quality of the image.
     """
-    print("Applying super-resolution...")
-    model_path = r"C:\Citidev\SuperResolution\FSRCNN_Tensorflow-master\models\FSRCNN_x2.pb"
-    sr = cv2.dnn_superres.DnnSuperResImpl_create()
-    sr.readModel(model_path)
-    sr.setModel("fsrcnn", 2)
+    print("Applying SEGAN-based enhancement...")
 
-    # Perform super-resolution
-    upscaled_image = sr.upsample(image)
-    print("Super-resolution applied successfully.")
-    return upscaled_image
+    # Define the SEGAN model
+    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+    model_path = r"C:\Citidev\SuperResolution\FSRCNN_Tensorflow-master\models\x.pth"
+
+    upsampler = RealESRGANer(
+        scale=4,
+        model_path=model_path,
+        dni_weight=None,
+        model=model,
+        tile=0,
+        tile_pad=10,
+        pre_pad=10,
+        half=False,
+        device="cpu",
+        gpu_id=None
+    )
+
+    # Enhance the image
+    output, _ = upsampler.enhance(image, outscale=2)
+    print("SEGAN-based enhancement applied successfully.")
+    return output
 
 # Function to calculate image quality parameters
 def check_image_quality(image):
@@ -167,15 +182,15 @@ def process_image(image_path, min_dpi=300, min_width=550, min_height=330):
     quality_status = check_image_quality(image)
 
     if quality_status == "Bad":
-        print("Attempt 1: Image is bad. Applying super-resolution...")
-        # Apply super-resolution after the first bad attempt
-        image = apply_super_resolution(image)
+        print("Attempt 1: Image is bad. Applying SEGAN-based enhancement...")
+        # Apply SEGAN-based enhancement after the first bad attempt
+        image = apply_segan_enhancement(image)
         # Second attempt to check the adjusted image
         quality_status = check_image_quality(image)
         if quality_status == "Bad":
             print("Attempt 2: Image is still bad after adjustments. Stopping process.")
         else:
-            print("Attempt 2: Image is now good after super-resolution.")
+            print("Attempt 2: Image is now good after enhancement.")
     else:
         print("Attempt 1: Image is good. No adjustments needed.")
 
@@ -183,7 +198,7 @@ def process_image(image_path, min_dpi=300, min_width=550, min_height=330):
     return image, quality_status
 
 # Example usage
-image_path = r"C:\CitiDev Projects\Trade_data\AB\310093900 21530315_1_2303786310093900.007.tiff"
+image_path = r"C:\CitiDev\SuperResolution\Input Images\sample.jpg"
 
 # Process the image
 image, status = process_image(image_path)
@@ -197,4 +212,3 @@ if status == "Bad":
     print("Final Status: Image properties were adjusted but still bad after two attempts.")
 elif status == "Good":
     print("Final Status: Image properties are good.")
-
