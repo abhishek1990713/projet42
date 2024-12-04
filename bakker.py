@@ -18,169 +18,158 @@ if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
 # Define constants for the model path and other parameters
-SEGAN_MODEL_PATH = r"C:\Citidev\SuperResolution\FSRCNN_Tensorflow-master\models\x.pth"
-INPUT_IMAGE_PATH = r"C:\CitiDev\SuperResolution\Input Images\sample.jpg"
-OUTPUT_IMAGE_DIR = r"C:\CitiDev\SuperResolution\Enhanced_Images"
-MIN_DPI = 300
-MIN_WIDTH = 550
-MIN_HEIGHT = 330
+import os
 import cv2
 import numpy as np
-from PIL import Image
-import os
-from basicsr.archs.rrdbnet_arch import RRDBNet
-from realesrgan import RealESRGANer
-from constant import SEGAN_MODEL_PATH, INPUT_IMAGE_PATH, OUTPUT_IMAGE_DIR, MIN_DPI, MIN_WIDTH, MIN_HEIGHT
+import pandas as pd
+from PIL import Image, ImageEnhance
 
-# Function to check and adjust DPI and pixel dimensions
-def check_and_adjust_dpi_and_pixels(image_path, min_dpi=MIN_DPI, min_width=MIN_WIDTH, min_height=MIN_HEIGHT):
-    print("Checking image properties...")
-    pil_image = Image.open(image_path)
+# Threshold values for quality checks
+THRESHOLD = {
+    "blurriness": 50,
+    "brightness": (50, 200),
+    "contrast": 50,
+    "noise_level": 30,
+    "skew_angle": 5,
+    "text_area": 20
+}
 
-    # Get the current DPI
-    dpi = pil_image.info.get("dpi", (200, 200))[0]
-    print(f"Current DPI: {dpi}")
+# Function to calculate blurriness
+def check_blurriness(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    return laplacian_var
 
-    # Get current dimensions
-    width, height = pil_image.size
-    print(f"Current Dimensions (WxH): {width}x{height}")
+# Function to adjust blurriness
+def adjust_blurriness(image):
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    return cv2.filter2D(image, -1, kernel)
 
-    adjustments_made = False
+# Function to calculate brightness
+def check_brightness(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    brightness = np.mean(gray)
+    return brightness
 
-    # Adjust DPI if below the threshold
-    if dpi < min_dpi:
-        print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
-        temp_path = "temp_image_with_dpi.png"
-        pil_image.save(temp_path, dpi=(min_dpi, min_dpi))
-        pil_image = Image.open(temp_path)
-        adjustments_made = True
+# Function to adjust brightness
+def adjust_brightness(image, target=120):
+    brightness = check_brightness(image)
+    factor = target / brightness
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    enhancer = ImageEnhance.Brightness(pil_image)
+    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
 
-    # Adjust pixel dimensions if below the threshold
-    if width < min_width or height < min_height:
-        print(f"Image dimensions are smaller than {min_width}x{min_height}. Resizing the image...")
-        resized_image = pil_image.resize((min_width, min_height), Image.ANTIALIAS)
-        temp_path = "temp_image_resized.png"
-        resized_image.save(temp_path, dpi=(min_dpi, min_dpi))
-        pil_image = Image.open(temp_path)
-        adjustments_made = True
+# Function to calculate contrast
+def check_contrast(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    contrast = np.std(gray)
+    return contrast
 
-    updated_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+# Function to adjust contrast
+def adjust_contrast(image, factor=1.5):
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    enhancer = ImageEnhance.Contrast(pil_image)
+    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
 
-    if adjustments_made:
-        print("Image properties were adjusted.")
-        return updated_image, "Bad"
-    else:
-        print("Image properties are sufficient.")
-        return updated_image, "Good"
+# Function to calculate noise level
+def check_noise_level(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 100, 200)
+    noise_level = np.mean(edges)
+    return noise_level
 
-# SEGAN-based image enhancement
-def apply_segan_enhancement(image, save_path):
-    print("Applying SEGAN-based enhancement...")
-    model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+# Function to denoise image
+def denoise_image(image):
+    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
 
-    upsampler = RealESRGANer(
-        scale=4,
-        model_path=SEGAN_MODEL_PATH,
-        dni_weight=None,
-        model=model,
-        tile=0,
-        tile_pad=10,
-        pre_pad=10,
-        half=False,
-        device="cpu",
-        gpu_id=None
-    )
+# Function to calculate skew angle
+def check_skew_angle(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
+    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
+    angles = []
+    if lines is not None:
+        for rho, theta in lines[:, 0]:
+            angle = np.degrees(theta) - 90
+            angles.append(angle)
+    skew_angle = np.mean(angles) if angles else 0
+    return skew_angle
 
-    output, _ = upsampler.enhance(image, outscale=2)
-    print("SEGAN-based enhancement applied successfully.")
+# Function to deskew image
+def deskew_image(image, angle):
+    (h, w) = image.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, -angle, 1.0)
+    return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
-    cv2.imwrite(save_path, output)
-    print(f"Enhanced image saved at {save_path}")
-    return output
+# Function to calculate text area coverage
+def check_text_area(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    text_area = cv2.countNonZero(thresh)
+    total_area = image.shape[0] * image.shape[1]
+    coverage = (text_area / total_area) * 100
+    return coverage
 
-# Function to calculate image quality parameters
-def check_image_quality(image):
-    print("Checking image quality...")
-    blurriness = calculate_blurriness(image)
-    noise_level = calculate_noise(image)
-    brightness = calculate_brightness(image)
-    contrast = calculate_contrast(image)
-    text_density = calculate_text_density(image)
+# Function to crop text area
+def crop_text_area(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    coords = cv2.findNonZero(thresh)
+    x, y, w, h = cv2.boundingRect(coords)
+    return image[y:y+h, x:x+w]
 
-    thresholds = {
-        "blurriness": 4000,
-        "noise": 0.2,
-        "brightness_low": 200,
-        "brightness_high": 500,
-        "contrast": 200,
-        "text_density": 0.04
-    }
+# Quality check function
+def quality_check(image_path):
+    image = cv2.imread(image_path)
+    metrics = {}
+    metrics["blurriness"] = check_blurriness(image)
+    metrics["brightness"] = check_brightness(image)
+    metrics["contrast"] = check_contrast(image)
+    metrics["noise_level"] = check_noise_level(image)
+    metrics["skew_angle"] = check_skew_angle(image)
+    metrics["text_area_coverage"] = check_text_area(image)
+    return metrics
 
-    quality = {
-        "blurriness": blurriness < thresholds["blurriness"],
-        "noise": noise_level < thresholds["noise"],
-        "brightness": thresholds["brightness_low"] < brightness <= thresholds["brightness_high"],
-        "contrast": contrast > thresholds["contrast"],
-        "text_density": text_density > thresholds["text_density"]
-    }
-
-    print("Blurriness:", quality["blurriness"])
-    print("Noise:", quality["noise"])
-    print("Brightness:", quality["brightness"])
-    print("Contrast:", quality["contrast"])
-    print("Text Density:", quality["text_density"])
-
-    if sum(quality.values()) >= 3:
-        return "Bad"
-    else:
-        return "Good"
-
-def calculate_blurriness(image):
-    return cv2.Laplacian(image, cv2.CV_64F).var()
-
-def calculate_noise(image):
-    return np.random.rand()
-
-def calculate_brightness(image):
-    return np.mean(image)
-
-def calculate_contrast(image):
-    return np.std(image)
-
-def calculate_text_density(image):
-    return 0.05
-
-# Main process function
-def process_image(image_path, save_dir):
-    print("Starting image processing...")
-    image, status = check_and_adjust_dpi_and_pixels(image_path)
-
-    quality_status = check_image_quality(image)
-
-    if quality_status == "Bad":
-        print("Attempt 1: Image is bad. Applying SEGAN-based enhancement...")
-        enhanced_image_path = os.path.join(save_dir, "enhanced_image.jpg")
-        image = apply_segan_enhancement(image, enhanced_image_path)
-        quality_status = check_image_quality(image)
-        if quality_status == "Bad":
-            print("Attempt 2: Image is still bad after adjustments. Stopping process.")
-        else:
-            print("Attempt 2: Image is now good after enhancement.")
-    else:
-        print("Attempt 1: Image is good. No adjustments needed.")
-
-    print("Processing completed.")
-    return image, quality_status
+# Main processing function
+def process_images(input_folder, output_folder, excel_path):
+    os.makedirs(output_folder, exist_ok=True)
+    images = [f for f in os.listdir(input_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+    quality_scores = []
+    for image_file in images:
+        image_path = os.path.join(input_folder, image_file)
+        output_path = os.path.join(output_folder, image_file)
+        image = cv2.imread(image_path)
+        scores_before = quality_check(image_path)
+        # Apply adjustments
+        if scores_before["blurriness"] < THRESHOLD["blurriness"]:
+            image = adjust_blurriness(image)
+        if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
+            image = adjust_brightness(image)
+        if scores_before["contrast"] < THRESHOLD["contrast"]:
+            image = adjust_contrast(image)
+        if scores_before["noise_level"] > THRESHOLD["noise_level"]:
+            image = denoise_image(image)
+        skew_angle = scores_before["skew_angle"]
+        if abs(skew_angle) > THRESHOLD["skew_angle"]:
+            image = deskew_image(image, skew_angle)
+        cv2.imwrite(output_path, image)
+        scores_after = quality_check(output_path)
+        row = {
+            "Image": image_file,
+            **{f"{metric}_Before": scores_before[metric] for metric in scores_before},
+            **{f"{metric}_After": scores_after[metric] for metric in scores_after}
+        }
+        quality_scores.append(row)
+    df = pd.DataFrame(quality_scores)
+    df.to_excel(excel_path, index=False)
+    print(f"Processed images saved to {output_folder}")
+    print(f"Quality scores saved to {excel_path}")
 
 # Example usage
-os.makedirs(OUTPUT_IMAGE_DIR, exist_ok=True)
-processed_image, final_status = process_image(INPUT_IMAGE_PATH, OUTPUT_IMAGE_DIR)
+input_folder = r"C:\path\to\input\images"
+output_folder = r"C:\path\to\output\images"
+excel_path = r"C:\path\to\output\quality_scores.xlsx"
 
-if processed_image is not None:
-    pil_image = Image.fromarray(cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB))
-    pil_image.show()
-
-if final_status == "Bad":
-    print("Final Status: Image is still bad after two attempts.")
-else:
-    print("Final Status: Image is good.")
+process_images(input_folder, output_folder, excel_path)
