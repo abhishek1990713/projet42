@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageEnhance
+import fitz  # PyMuPDF for PDF to image conversion
 
 # Threshold values for quality checks
 THRESHOLD = {
@@ -156,12 +157,30 @@ def convert_to_tif_with_dpi(image_path, min_dpi=300):
     
     return image_path
 
+# Function to convert image to black and white (grayscale)
+def convert_to_black_and_white(image):
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+# Function to convert PDF to images (one page per image)
+def convert_pdf_to_images(pdf_path, output_folder):
+    doc = fitz.open(pdf_path)
+    image_paths = []
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap()
+        img_path = os.path.join(output_folder, f"page_{page_num + 1}.png")
+        pix.save(img_path)
+        image_paths.append(img_path)
+    return image_paths
+
 # Process image folder
 def process_images(input_folder, output_folder, excel_path):
     os.makedirs(output_folder, exist_ok=True)
     images = [f for f in os.listdir(input_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
+    pdfs = [f for f in os.listdir(input_folder) if f.lower().endswith(('pdf'))]
     quality_scores = []
     
+    # Process image files
     for image_file in images:
         image_path = os.path.join(input_folder, image_file)
         output_path = os.path.join(output_folder, image_file)
@@ -169,37 +188,44 @@ def process_images(input_folder, output_folder, excel_path):
         # Convert image to TIFF with DPI check
         convert_to_tif_with_dpi(image_path)
         
-        # Read image
+        # Read and convert to black and white
         image = cv2.imread(image_path)
-        scores_before = quality_check(image_path)
+        image_bw = convert_to_black_and_white(image)
         
-        # Apply adjustments based on quality check
+        # Apply quality checks and adjustments
+        scores_before = quality_check(image_path)
         if scores_before["blurriness"] < THRESHOLD["blurriness"]:
-            image = adjust_blurriness(image)
+            image_bw = adjust_blurriness(image_bw)
         if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
-            image = adjust_brightness(image)
+            image_bw = adjust_brightness(image_bw)
         if scores_before["contrast"] < THRESHOLD["contrast"]:
-            image = adjust_contrast(image)
+            image_bw = adjust_contrast(image_bw)
         if scores_before["noise_level"] > THRESHOLD["noise_level"]:
-            image = denoise_image(image)
+            image_bw = denoise_image(image_bw)
         if abs(scores_before["skew_angle"]) > THRESHOLD["skew_angle"]:
-            image = deskew_image(image, scores_before["skew_angle"])
+            image_bw = deskew_image(image_bw, scores_before["skew_angle"])
 
         # Save the final adjusted image as a TIFF file
         print(f"Saving final output image as TIFF: {output_path}")
-        cv2.imwrite(output_path, image)
+        cv2.imwrite(output_path, image_bw)
 
         # Quality checks after adjustments
         scores_after = quality_check(output_path)
         quality_scores.append({image_file: {"before": scores_before, "after": scores_after}})
 
-    # Save quality metrics to Excel
-    quality_df = pd.DataFrame(quality_scores)
-    quality_df.to_excel(excel_path, index=False)
+    # Process PDF files
+    for pdf_file in pdfs:
+        pdf_path = os.path.join(input_folder, pdf_file)
+        image_paths = convert_pdf_to_images(pdf_path, output_folder)
+        for img_path in image_paths:
+            print(f"Processed PDF page image: {img_path}")
+    
+    # Save quality scores in Excel file
+    df = pd.DataFrame(quality_scores)
+    df.to_excel(excel_path, index=False)
 
-# Main execution
-if __name__ == "__main__":
-    input_folder = "path_to_input_folder"  # Path to the folder containing images
-    output_folder = "path_to_output_folder"  # Path to save the output images
-    excel_path = "path_to_quality_metrics.xlsx"  # Path to save the quality metrics
-    process_images(input_folder, output_folder, excel_path)
+# Example usage
+input_folder = "path_to_input_folder"
+output_folder = "path_to_output_folder"
+excel_path = "path_to_output_excel.xlsx"
+process_images(input_folder, output_folder, excel_path)
