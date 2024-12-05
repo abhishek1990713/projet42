@@ -142,7 +142,7 @@ def quality_check(image_path):
 
 # Convert image to TIFF format with DPI check and adjustment (in-memory only)
 def convert_to_tif_with_dpi(image_path, min_dpi=300):
-    print("Checking image properties...")
+    print("Converting to TIFF and checking image properties...")
     
     pil_image = Image.open(image_path)
     dpi = pil_image.info.get("dpi", (200, 200))[0]
@@ -151,11 +151,14 @@ def convert_to_tif_with_dpi(image_path, min_dpi=300):
     if dpi < min_dpi:
         print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
         pil_image = pil_image.convert("RGB")  # Ensure image is in RGB format
-        pil_image.save(image_path, dpi=(min_dpi, min_dpi))
+        tiff_path = image_path.replace(os.path.splitext(image_path)[1], ".tiff")
+        pil_image.save(tiff_path, dpi=(min_dpi, min_dpi))
     else:
         print(f"DPI is already {dpi}, no adjustment needed.")
+        tiff_path = image_path.replace(os.path.splitext(image_path)[1], ".tiff")
+        pil_image.save(tiff_path)
     
-    return image_path
+    return tiff_path
 
 # Function to convert image to black and white (grayscale)
 def convert_to_black_and_white(image):
@@ -183,17 +186,17 @@ def process_images(input_folder, output_folder, excel_path):
     # Process image files
     for image_file in images:
         image_path = os.path.join(input_folder, image_file)
-        output_path = os.path.join(output_folder, image_file)
+        output_path = os.path.join(output_folder, image_file.replace(os.path.splitext(image_file)[1], ".tiff"))
         
         # Convert image to TIFF format first
-        convert_to_tif_with_dpi(image_path)
+        tiff_image_path = convert_to_tif_with_dpi(image_path)
         
         # Read and convert to black and white
-        image = cv2.imread(image_path)
+        image = cv2.imread(tiff_image_path)
         image_bw = convert_to_black_and_white(image)
         
         # Apply quality checks and adjustments
-        scores_before = quality_check(image_path)
+        scores_before = quality_check(tiff_image_path)
         if scores_before["blurriness"] < THRESHOLD["blurriness"]:
             image_bw = adjust_blurriness(image_bw)
         if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
@@ -208,11 +211,10 @@ def process_images(input_folder, output_folder, excel_path):
         # Save the final adjusted image as a TIFF file
         print(f"Saving final output image as TIFF: {output_path}")
         cv2.imwrite(output_path, image_bw)
-
-        # Quality checks after adjustments
-        scores_after = quality_check(output_path)
-        quality_scores.append({image_file: {"before": scores_before, "after": scores_after}})
-
+        
+        # Save quality scores for the image
+        quality_scores.append(scores_before)
+    
     # Process PDF files
     for pdf_file in pdfs:
         pdf_path = os.path.join(input_folder, pdf_file)
