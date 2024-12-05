@@ -35,7 +35,11 @@ THRESHOLD = {
 
 # Function to calculate blurriness
 def check_blurriness(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # If the image is grayscale (single-channel), directly use it
+    if len(image.shape) == 2:
+        gray = image
+    else:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
 # Function to adjust blurriness
@@ -45,7 +49,11 @@ def adjust_blurriness(image):
 
 # Function to calculate brightness
 def check_brightness(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # If the image is grayscale (single-channel), directly use it
+    if len(image.shape) == 2:
+        gray = image
+    else:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return np.mean(gray)
 
 # Function to adjust brightness
@@ -58,7 +66,11 @@ def adjust_brightness(image, target=120):
 
 # Function to calculate contrast
 def check_contrast(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # If the image is grayscale (single-channel), directly use it
+    if len(image.shape) == 2:
+        gray = image
+    else:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return np.std(gray)
 
 # Function to adjust contrast
@@ -69,7 +81,11 @@ def adjust_contrast(image, factor=1.5):
 
 # Function to calculate noise level
 def check_noise_level(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # If the image is grayscale (single-channel), directly use it
+    if len(image.shape) == 2:
+        gray = image
+    else:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 100, 200)
     return np.mean(edges)
 
@@ -79,7 +95,11 @@ def denoise_image(image):
 
 # Function to calculate skew angle
 def check_skew_angle(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # If the image is grayscale (single-channel), directly use it
+    if len(image.shape) == 2:
+        gray = image
+    else:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150, apertureSize=3)
     lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
@@ -183,12 +203,11 @@ def process_image(image, file_name, save_path, quality_scores, output_folder):
     # Save final processed image as TIFF
     final_path = os.path.join(output_folder, f"{os.path.splitext(file_name)[0]}_processed.tiff")
     cv2.imwrite(final_path, image_bw)
-    print(f"Final processed image saved to: {final_path}")
 
-    quality_scores.append({"file_name": file_name, **scores})
+# Main function to run the processing
+if __name__ == "__main__":
+    input_folder = 'path/to/input/folder'
+    output_folder = 'path/to/output/folder'
+    excel_path = 'path/to/output/quality_scores.xlsx'
 
-# Example usage
-input_folder = "path_to_input_folder"  # Folder containing images and PDFs
-output_folder = "path_to_output_folder"  # Folder where processed files will be saved
-excel_path = "path_to_quality_metrics.xlsx"  # Path to save the quality metrics
-process_files(input_folder, output_folder, excel_path)
+    process_files(input_folder, output_folder, excel_path)
