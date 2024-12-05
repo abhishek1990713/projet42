@@ -139,29 +139,22 @@ def quality_check(image_path):
     metrics["text_area_coverage"] = check_text_area(image)
     return metrics
 
-# Convert image to TIFF format with DPI check and adjustment
-def convert_to_tif_with_dpi(image_path, output_path, min_dpi=300):
+# Convert image to TIFF format with DPI check and adjustment (in-memory only)
+def convert_to_tif_with_dpi(image_path, min_dpi=300):
     print("Checking image properties...")
     
     pil_image = Image.open(image_path)
     dpi = pil_image.info.get("dpi", (200, 200))[0]
     print(f"Current DPI: {dpi}")
     
-    width, height = pil_image.size
-    print(f"Current Dimensions: {width}x{height}")
-    
-    adjustments_made = False
-    
     if dpi < min_dpi:
         print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
-        pil_image.save(output_path, dpi=(min_dpi, min_dpi))
-        adjustments_made = True
+        pil_image = pil_image.convert("RGB")  # Ensure image is in RGB format
+        pil_image.save(image_path, dpi=(min_dpi, min_dpi))
     else:
         print(f"DPI is already {dpi}, no adjustment needed.")
     
-    if adjustments_made:
-        print(f"Image adjusted to {min_dpi} DPI and saved as {output_path}")
-    return output_path
+    return image_path
 
 # Process image folder
 def process_images(input_folder, output_folder, excel_path):
@@ -174,13 +167,13 @@ def process_images(input_folder, output_folder, excel_path):
         output_path = os.path.join(output_folder, image_file)
         
         # Convert image to TIFF with DPI check
-        convert_to_tif_with_dpi(image_path, output_path)
+        convert_to_tif_with_dpi(image_path)
         
-        # Perform quality checks and adjust if needed
-        image = cv2.imread(output_path)
+        # Read image
+        image = cv2.imread(image_path)
         scores_before = quality_check(image_path)
         
-        # Apply adjustments
+        # Apply adjustments based on quality check
         if scores_before["blurriness"] < THRESHOLD["blurriness"]:
             image = adjust_blurriness(image)
         if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
@@ -192,7 +185,8 @@ def process_images(input_folder, output_folder, excel_path):
         if abs(scores_before["skew_angle"]) > THRESHOLD["skew_angle"]:
             image = deskew_image(image, scores_before["skew_angle"])
 
-        # Save the adjusted image
+        # Save the final adjusted image as a TIFF file
+        print(f"Saving final output image as TIFF: {output_path}")
         cv2.imwrite(output_path, image)
 
         # Quality checks after adjustments
@@ -205,7 +199,7 @@ def process_images(input_folder, output_folder, excel_path):
 
 # Main execution
 if __name__ == "__main__":
-    input_folder = "path_to_input_folder"  # Path to the folder containing images and PDFs
+    input_folder = "path_to_input_folder"  # Path to the folder containing images
     output_folder = "path_to_output_folder"  # Path to save the output images
     excel_path = "path_to_quality_metrics.xlsx"  # Path to save the quality metrics
     process_images(input_folder, output_folder, excel_path)
