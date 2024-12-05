@@ -23,8 +23,6 @@ import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageEnhance
-from PyPDF2 import PdfReader
-from io import BytesIO
 
 # Threshold values for quality checks
 THRESHOLD = {
@@ -35,51 +33,6 @@ THRESHOLD = {
     "skew_angle": 5,
     "text_area": 20
 }
-
-# Function to convert image to .tif format with the specified DPI (default is 300)
-def convert_to_tif_with_dpi(image_path, output_path, min_dpi=300):
-    print("Checking image properties...")
-
-    # Open the image with PIL (Pillow)
-    pil_image = Image.open(image_path)
-
-    # Get current DPI from the image (default to (200, 200) if not available)
-    dpi = pil_image.info.get("dpi", (200, 200))[0]
-
-    print(f"Current DPI: {dpi}")
-
-    # Get the current dimensions (width and height) of the image
-    width, height = pil_image.size
-    print(f"Current Dimensions: {width}x{height}")
-
-    adjustments_made = False
-
-    # Check if DPI is less than the desired minimum DPI
-    if dpi < min_dpi:
-        print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
-        
-        # Adjust the DPI by resizing the image to meet the desired DPI
-        pil_image = pil_image.resize(
-            (int(pil_image.width * min_dpi / dpi), int(pil_image.height * min_dpi / dpi)),
-            Image.Resampling.LANCZOS
-        )
-        dpi = min_dpi  # Set DPI to the minimum DPI after resizing
-        adjustments_made = True
-
-    # Save the image as TIFF with the adjusted DPI
-    pil_image.save(output_path, format="TIFF", dpi=(dpi, dpi))
-
-    # Confirm adjustments
-    if adjustments_made:
-        print(f"Image adjusted to {dpi} DPI and saved as {output_path}")
-    else:
-        print(f"No DPI adjustment needed. Image saved as {output_path}")
-
-    return output_path
-
-# Convert image to black and white
-def convert_to_black_and_white(image):
-    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 # Function to calculate blurriness
 def check_blurriness(image):
@@ -94,7 +47,14 @@ def adjust_blurriness(image):
 
 # Function to calculate brightness
 def check_brightness(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Check if the image is in grayscale (single channel)
+    if len(image.shape) == 2:  # Single channel image (grayscale)
+        gray = image  # No need to convert
+    elif len(image.shape) == 3:  # Multi-channel image (color)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+    else:
+        raise ValueError("Invalid image format")
+    
     brightness = np.mean(gray)
     return brightness
 
@@ -134,7 +94,7 @@ def check_skew_angle(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150, apertureSize=3)
-    lines = cv2.HoughLines(edges, 1, np.pi/180, 200)
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
     angles = []
     if lines is not None:
         for rho, theta in lines[:, 0]:
@@ -179,40 +139,48 @@ def quality_check(image_path):
     metrics["text_area_coverage"] = check_text_area(image)
     return metrics
 
-# Function to handle PDFs
-def process_pdf(pdf_path, output_folder):
-    pdf_reader = PdfReader(pdf_path)
-    for page_num, page in enumerate(pdf_reader.pages):
-        print(f"Processing page {page_num + 1} of {pdf_path}...")
-        image = page.to_image(resolution=300)  # Convert PDF page to image at 300 DPI
-        image_path = os.path.join(output_folder, f"page_{page_num + 1}.png")
-        image.save(image_path, "PNG")
-        convert_to_tif_with_dpi(image_path, os.path.join(output_folder, f"page_{page_num + 1}.tif"))
-        os.remove(image_path)  # Delete the temporary PNG image
+# Convert image to TIFF format with DPI check and adjustment
+def convert_to_tif_with_dpi(image_path, output_path, min_dpi=300):
+    print("Checking image properties...")
+    
+    pil_image = Image.open(image_path)
+    dpi = pil_image.info.get("dpi", (200, 200))[0]
+    print(f"Current DPI: {dpi}")
+    
+    width, height = pil_image.size
+    print(f"Current Dimensions: {width}x{height}")
+    
+    adjustments_made = False
+    
+    if dpi < min_dpi:
+        print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
+        pil_image.save(output_path, dpi=(min_dpi, min_dpi))
+        adjustments_made = True
+    else:
+        print(f"DPI is already {dpi}, no adjustment needed.")
+    
+    if adjustments_made:
+        print(f"Image adjusted to {min_dpi} DPI and saved as {output_path}")
+    return output_path
 
-# Main processing function
+# Process image folder
 def process_images(input_folder, output_folder, excel_path):
     os.makedirs(output_folder, exist_ok=True)
     images = [f for f in os.listdir(input_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
-    pdfs = [f for f in os.listdir(input_folder) if f.lower().endswith('pdf')]
-    
     quality_scores = []
-
+    
     for image_file in images:
         image_path = os.path.join(input_folder, image_file)
         output_path = os.path.join(output_folder, image_file)
-        image = cv2.imread(image_path)
-
-        # Convert to black and white
-        image = convert_to_black_and_white(image)
-
-        # Convert to TIFF with DPI adjustment if needed
-        convert_to_tif_with_dpi(image_path, output_path, min_dpi=300)
-
-        # Quality checks before adjustments
+        
+        # Convert image to TIFF with DPI check
+        convert_to_tif_with_dpi(image_path, output_path)
+        
+        # Perform quality checks and adjust if needed
+        image = cv2.imread(output_path)
         scores_before = quality_check(image_path)
-
-        # Apply adjustments based on thresholds
+        
+        # Apply adjustments
         if scores_before["blurriness"] < THRESHOLD["blurriness"]:
             image = adjust_blurriness(image)
         if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
@@ -230,11 +198,6 @@ def process_images(input_folder, output_folder, excel_path):
         # Quality checks after adjustments
         scores_after = quality_check(output_path)
         quality_scores.append({image_file: {"before": scores_before, "after": scores_after}})
-
-    # Process PDFs
-    for pdf_file in pdfs:
-        pdf_path = os.path.join(input_folder, pdf_file)
-        process_pdf(pdf_path, output_folder)
 
     # Save quality metrics to Excel
     quality_df = pd.DataFrame(quality_scores)
