@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageEnhance
-import fitz  # PyMuPDF for PDF to image conversion
+import fitz  # PyMuPDF for PDF handling
 
 # Threshold values for quality checks
 THRESHOLD = {
@@ -35,7 +35,53 @@ THRESHOLD = {
     "text_area": 20
 }
 
-# Function to calculate blurriness
+# Function to convert an image to TIFF and ensure a minimum DPI
+def convert_to_tif_with_dpi(image_path, output_path, min_dpi=300):
+    print(f"Converting to TIFF: {image_path}")
+    pil_image = Image.open(image_path)
+    dpi = pil_image.info.get("dpi", (200, 200))[0]
+    print(f"Current DPI: {dpi}")
+    
+    if dpi < min_dpi:
+        print(f"DPI is lower than {min_dpi}. Adjusting DPI...")
+        pil_image.save(output_path, dpi=(min_dpi, min_dpi))
+    else:
+        pil_image.save(output_path)
+    print(f"Saved TIFF with DPI: {output_path}")
+    return output_path
+
+# Function to convert PDF to images (each page as TIFF)
+def convert_pdf_to_images(pdf_path):
+    doc = fitz.open(pdf_path)  # Open PDF
+    images = []
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        pix = page.get_pixmap()
+        img_array = np.array(pix.samples)  # Convert to numpy array (image)
+        img_array = img_array.reshape((pix.height, pix.width, 4))  # reshape as RGBA image
+        images.append(img_array)
+    return images
+
+# Function to check and adjust image brightness
+def check_brightness(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    brightness = np.mean(gray)
+    return brightness
+
+def adjust_brightness(image, target=120):
+    brightness = check_brightness(image)
+    factor = target / brightness
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    enhancer = ImageEnhance.Brightness(pil_image)
+    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
+
+# Function to convert to black-and-white
+def convert_to_black_and_white(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, bw_image = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+    return cv2.cvtColor(bw_image, cv2.COLOR_GRAY2BGR)
+
+# Function to check blurriness
 def check_blurriness(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
@@ -46,51 +92,7 @@ def adjust_blurriness(image):
     kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
     return cv2.filter2D(image, -1, kernel)
 
-# Function to calculate brightness
-def check_brightness(image):
-    # Check if the image is in grayscale (single channel)
-    if len(image.shape) == 2:  # Single channel image (grayscale)
-        gray = image  # No need to convert
-    elif len(image.shape) == 3:  # Multi-channel image (color)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-    else:
-        raise ValueError("Invalid image format")
-    
-    brightness = np.mean(gray)
-    return brightness
-
-# Function to adjust brightness
-def adjust_brightness(image, target=120):
-    brightness = check_brightness(image)
-    factor = target / brightness
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    enhancer = ImageEnhance.Brightness(pil_image)
-    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
-
-# Function to calculate contrast
-def check_contrast(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    contrast = np.std(gray)
-    return contrast
-
-# Function to adjust contrast
-def adjust_contrast(image, factor=1.5):
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    enhancer = ImageEnhance.Contrast(pil_image)
-    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
-
-# Function to calculate noise level
-def check_noise_level(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 100, 200)
-    noise_level = np.mean(edges)
-    return noise_level
-
-# Function to denoise image
-def denoise_image(image):
-    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
-
-# Function to calculate skew angle
+# Function to check skew angle
 def check_skew_angle(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -101,133 +103,90 @@ def check_skew_angle(image):
         for rho, theta in lines[:, 0]:
             angle = np.degrees(theta) - 90
             angles.append(angle)
-    skew_angle = np.mean(angles) if angles else 0
-    return skew_angle
+    return np.mean(angles) if angles else 0
 
-# Function to deskew image
+# Function to deskew an image
 def deskew_image(image, angle):
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, -angle, 1.0)
     return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
-# Function to calculate text area coverage
-def check_text_area(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    text_area = cv2.countNonZero(thresh)
-    total_area = image.shape[0] * image.shape[1]
-    coverage = (text_area / total_area) * 100
-    return coverage
-
-# Function to crop text area
-def crop_text_area(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    coords = cv2.findNonZero(thresh)
-    x, y, w, h = cv2.boundingRect(coords)
-    return image[y:y+h, x:x+w]
-
-# Quality check function
-def quality_check(image_path):
-    image = cv2.imread(image_path)
-    metrics = {}
-    metrics["blurriness"] = check_blurriness(image)
-    metrics["brightness"] = check_brightness(image)
-    metrics["contrast"] = check_contrast(image)
-    metrics["noise_level"] = check_noise_level(image)
-    metrics["skew_angle"] = check_skew_angle(image)
-    metrics["text_area_coverage"] = check_text_area(image)
-    return metrics
-
-# Convert image to TIFF format with DPI check and adjustment (in-memory only)
-def convert_to_tif_with_dpi(image_path, min_dpi=300):
-    print("Converting to TIFF and checking image properties...")
+# Function to process individual images
+def process_image(image, file_name, output_path, quality_scores, output_folder):
+    print(f"Processing Image: {file_name}")
+    scores_before = {
+        "blurriness": check_blurriness(image),
+        "brightness": check_brightness(image),
+        "skew_angle": check_skew_angle(image),
+    }
     
-    pil_image = Image.open(image_path)
-    dpi = pil_image.info.get("dpi", (200, 200))[0]
-    print(f"Current DPI: {dpi}")
-    
-    if dpi < min_dpi:
-        print(f"DPI is lower than {min_dpi}. Adjusting DPI to {min_dpi}...")
-        pil_image = pil_image.convert("RGB")  # Ensure image is in RGB format
-        tiff_path = image_path.replace(os.path.splitext(image_path)[1], ".tiff")
-        pil_image.save(tiff_path, dpi=(min_dpi, min_dpi))
-    else:
-        print(f"DPI is already {dpi}, no adjustment needed.")
-        tiff_path = image_path.replace(os.path.splitext(image_path)[1], ".tiff")
-        pil_image.save(tiff_path)
-    
-    return tiff_path
+    # Adjust quality metrics
+    if scores_before["blurriness"] < THRESHOLD["blurriness"]:
+        print("Adjusting blurriness...")
+        image = adjust_blurriness(image)
 
-# Function to convert image to black and white (grayscale)
-def convert_to_black_and_white(image):
-    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
+        print("Adjusting brightness...")
+        image = adjust_brightness(image)
 
-# Function to convert PDF to images (one page per image)
-def convert_pdf_to_images(pdf_path, output_folder):
-    doc = fitz.open(pdf_path)
-    image_paths = []
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        pix = page.get_pixmap()
-        img_path = os.path.join(output_folder, f"page_{page_num + 1}.png")
-        pix.save(img_path)
-        image_paths.append(img_path)
-    return image_paths
+    skew_angle = scores_before["skew_angle"]
+    if abs(skew_angle) > THRESHOLD["skew_angle"]:
+        print("Adjusting skew angle...")
+        image = deskew_image(image, skew_angle)
 
-# Process image folder
-def process_images(input_folder, output_folder, excel_path):
+    # Convert to black and white
+    print("Converting to black-and-white...")
+    image = convert_to_black_and_white(image)
+
+    # Save final TIFF output
+    print(f"Saving processed image: {output_path}")
+    cv2.imwrite(output_path, image)
+
+    # Log quality metrics after processing
+    scores_after = {
+        "blurriness": check_blurriness(image),
+        "brightness": check_brightness(image),
+        "skew_angle": check_skew_angle(image),
+    }
+    quality_scores.append({
+        "Image": file_name,
+        **{f"{k}_Before": v for k, v in scores_before.items()},
+        **{f"{k}_After": v for k, v in scores_after.items()}
+    })
+
+# Main function to process files
+def process_files(input_folder, output_folder, excel_path):
     os.makedirs(output_folder, exist_ok=True)
-    images = [f for f in os.listdir(input_folder) if f.lower().endswith(('png', 'jpg', 'jpeg'))]
-    pdfs = [f for f in os.listdir(input_folder) if f.lower().endswith(('pdf'))]
     quality_scores = []
-    
-    # Process image files
-    for image_file in images:
-        image_path = os.path.join(input_folder, image_file)
-        output_path = os.path.join(output_folder, image_file.replace(os.path.splitext(image_file)[1], ".tiff"))
-        
-        # Convert image to TIFF format first
-        tiff_image_path = convert_to_tif_with_dpi(image_path)
-        
-        # Read and convert to black and white
-        image = cv2.imread(tiff_image_path)
-        image_bw = convert_to_black_and_white(image)
-        
-        # Apply quality checks and adjustments
-        scores_before = quality_check(tiff_image_path)
-        if scores_before["blurriness"] < THRESHOLD["blurriness"]:
-            image_bw = adjust_blurriness(image_bw)
-        if not (THRESHOLD["brightness"][0] <= scores_before["brightness"] <= THRESHOLD["brightness"][1]):
-            image_bw = adjust_brightness(image_bw)
-        if scores_before["contrast"] < THRESHOLD["contrast"]:
-            image_bw = adjust_contrast(image_bw)
-        if scores_before["noise_level"] > THRESHOLD["noise_level"]:
-            image_bw = denoise_image(image_bw)
-        if abs(scores_before["skew_angle"]) > THRESHOLD["skew_angle"]:
-            image_bw = deskew_image(image_bw, scores_before["skew_angle"])
 
-        # Save the final adjusted image as a TIFF file
-        print(f"Saving final output image as TIFF: {output_path}")
-        cv2.imwrite(output_path, image_bw)
-        
-        # Save quality scores for the image
-        quality_scores.append(scores_before)
-    
-    # Process PDF files
-    for pdf_file in pdfs:
-        pdf_path = os.path.join(input_folder, pdf_file)
-        image_paths = convert_pdf_to_images(pdf_path, output_folder)
-        for img_path in image_paths:
-            print(f"Processed PDF page image: {img_path}")
-    
-    # Save quality scores in Excel file
-    df = pd.DataFrame(quality_scores)
-    df.to_excel(excel_path, index=False)
+    for file_name in os.listdir(input_folder):
+        file_path = os.path.join(input_folder, file_name)
+
+        if file_name.lower().endswith(('png', 'jpg', 'jpeg', 'bmp')):
+            # Process image file
+            tiff_path = os.path.join(output_folder, f"{os.path.splitext(file_name)[0]}.tiff")
+            convert_to_tif_with_dpi(file_path, tiff_path)
+            image = cv2.imread(tiff_path)
+            process_image(image, file_name, tiff_path, quality_scores, output_folder)
+
+        elif file_name.lower().endswith('.pdf'):
+            # Process PDF file
+            print(f"Processing PDF: {file_name}")
+            pdf_images = convert_pdf_to_images(file_path)
+            for i, pdf_image in enumerate(pdf_images):
+                pdf_image_path = os.path.join(output_folder, f"{os.path.splitext(file_name)[0]}_page_{i + 1}.tiff")
+                # Process image (after conversion)
+                process_image(pdf_image, file_name, pdf_image_path, quality_scores, output_folder)
+
+    if quality_scores:
+        df = pd.DataFrame(quality_scores)
+        df.to_excel(excel_path, index=False)
+        print(f"Quality metrics saved to: {excel_path}")
 
 # Example usage
-input_folder = "path_to_input_folder"
-output_folder = "path_to_output_folder"
-excel_path = "path_to_output_excel.xlsx"
-process_images(input_folder, output_folder, excel_path)
+input_folder = r"C:\path\to\input"
+output_folder = r"C:\path\to\output"
+excel_path = os.path.join(output_folder, "quality_metrics.xlsx")
+
+process_files(input_folder, output_folder, excel_path)
