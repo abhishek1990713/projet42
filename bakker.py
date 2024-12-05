@@ -185,7 +185,7 @@ def process_images(input_folder, output_folder, excel_path):
         image_path = os.path.join(input_folder, image_file)
         output_path = os.path.join(output_folder, image_file)
         
-        # Convert image to TIFF with DPI check
+        # Convert image to TIFF format first
         convert_to_tif_with_dpi(image_path)
         
         # Read and convert to black and white
