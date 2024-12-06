@@ -17,58 +17,86 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-from ultralytics import YOLO
 import os
+import json
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from yolo_classification_test import predict_image_class
+from japan_keywords_file.rc_corner import process_rc_image
+from japan_keywords_file.passport_corner import process_passport_image
+from japan_keywords_file.driving_corner import process_dl_image
+from japan_information_file.driving_lic_info import process_dl_information
+from japan_information_file.rc_info import process_RC_information
+from japan_information_file.passport_info import process_Passport_information
+from japan_information_file.Mnc_info import process_MNC_information
 
-def predict_image_class(model_path, image_path):
-    """
-    Predicts the class of a given image using a pre-trained YOLO model.
+logging.basicConfig(
+    filename="image_processing.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
-    Args:
-        model_path (str): Path to the YOLO model file (.pt).
-        image_path (str): Path to the image to be classified.
+logger = logging.getLogger()
 
-    Returns:
-        str: The predicted class for the image.
-    """
+
+def process_image_pipeline(image_path, timeout=1800):
     try:
-        # Load the YOLO model
-        model = YOLO(model_path)
+        logger.info(f"Processing started for image: {image_path}")
 
-        # Predict the class for the image
-        results = model.predict(source=image_path)
+        def process():
+            logger.info("The image is sharp. Proceeding with classification...")
 
-        if not results:
-            raise ValueError("No results returned by the model.")
+            model_path = r"C:\CitiDev\japan_pipeline\all_model\classification_model.pt"
+            classification_result = predict_image_class(model_path, image_path)
 
-        # Assuming top prediction is the most relevant
-        for result in results:
-            predicted_class = result.names[result.probs.top1]
-            return predicted_class
+            if classification_result:
+                predicted_label = classification_result
+                if predicted_label == 'Driving License':
+                    process_result = process_dl_image(image_path)
+                    if process_result == 'Image is not good.':
+                        return {"error": "Image is not good."}
+                    details = process_dl_information(image_path)
+                    return {
+                        "Predicted Class": "Driving License",
+                        "Bounding Boxes": "All four bounding boxes are present",
+                        "Confidence Scores": "All confidence scores are above the threshold of 0.7.",
+                        "Image Quality": "Image quality is good and all corners match.",
+                        "Detected Information": details,
+                    }
+
+                elif predicted_label == 'Passport':
+                    process_result = process_passport_image(image_path)
+                    if process_result == 'Image is not good.':
+                        return {"error": "Image is not good."}
+                    details = process_Passport_information(image_path)
+                    return {"Predicted Class": "Passport", "Detected Information": details}
+
+                elif predicted_label == 'Residence Card':
+                    process_result = process_rc_image(image_path)
+                    if process_result == 'Image is not good.':
+                        return {"error": "Image is not good."}
+                    details = process_RC_information(image_path)
+                    return {"Predicted Class": "Residence Card", "Detected Information": details}
+
+                elif predicted_label == 'MNC':
+                    details = process_MNC_information(image_path)
+                    return {"Predicted Class": "MNC", "Detected Information": details}
+
+                else:
+                    return {"error": "Class not recognized for further processing."}
+            else:
+                return {"error": "Image classification failed."}
+
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(process)
+            result = future.result(timeout=timeout)
+            logger.info(f"Processing completed for image: {image_path}")
+            return result
+
+    except TimeoutError:
+        logger.error(f"Processing timed out for image: {image_path}")
+        return {"error": "Processing timed out."}
 
     except Exception as e:
-        print(f"Error occurred: {e}")
-        return None
-
-# Example usage:
-model_path = r"C:\CitiDev\japan_pipeline\all_model\classification_model.pt"
-image_path = r'C:\CitiDev\japan_pipeline\data_set\Test image\6f7rch30.png'
-
-predicted_class = predict_image_class(model_path, image_path)
-print(f"Predicted Class: {predicted_class}")
-
-# Example usage
-image_path = r'C:\CitiDev\japan_pipeline\data_set\Test image\6f7rch30.png'
-model_path = r"C:\CitiDev\japan_pipeline\all_model\classification_model.pt"
-classification_result = classify_image(image_path, model_path)
-
-# Check the predicted label and take action
-if classification_result:
-    predicted_label = classification_result[0][1]  # Extract the predicted label
-    confidence = float(classification_result[0][2])  # Extract the confidence
-
-    print(f"Predicted Class: {predicted_label} (Confidence: {confidence:.2f})")
-    
-    if predicted_label == 'driving license':
-        # Implement any additional logic for 'driving license'
-        pass
+        logger.exception(f"An error occurred while processing {image_path}: {str(e)}")
+        return {"error": f"An error occurred during processing: {str(e)}"}
