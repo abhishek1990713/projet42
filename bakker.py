@@ -17,40 +17,45 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-import os
 from ultralytics import YOLO
-import logging
+import os
 
-# Initialize logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def predict_image_class(model_path, image_path):
+    """
+    Predicts the class of a given image using a pre-trained YOLO model.
 
-# Define the classification function
-def classify_image(image_path, model_path):
-    model = YOLO(model_path)
+    Args:
+        model_path (str): Path to the YOLO model file (.pt).
+        image_path (str): Path to the image to be classified.
 
-    # Predict the result
-    results = model.predict(source=image_path)
-    
-    # Store final results
-    final_result = []
+    Returns:
+        str: The predicted class for the image.
+    """
+    try:
+        # Load the YOLO model
+        model = YOLO(model_path)
 
-    # Process each result
-    for result in results:
-        predicted_label = result.names[result.probs.top1]
-        confidence = result.probs.topiconf
+        # Predict the class for the image
+        results = model.predict(source=image_path)
 
-        # Print and log results
-        print(f"File Name: {os.path.basename(result.path)}")
-        print(f"Predicted Class: {predicted_label}")
-        print(f"Confidence Score: {confidence:.2f}")
+        if not results:
+            raise ValueError("No results returned by the model.")
 
-        # Log the result
-        logger.info(f"Predicted Class: {predicted_label} (Confidence: {confidence:.2f})")
+        # Assuming top prediction is the most relevant
+        for result in results:
+            predicted_class = result.names[result.probs.top1]
+            return predicted_class
 
-        final_result.append([os.path.basename(result.path), predicted_label, f'{confidence:.2f}'])
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return None
 
-    return final_result
+# Example usage:
+model_path = r"C:\CitiDev\japan_pipeline\all_model\classification_model.pt"
+image_path = r'C:\CitiDev\japan_pipeline\data_set\Test image\6f7rch30.png'
+
+predicted_class = predict_image_class(model_path, image_path)
+print(f"Predicted Class: {predicted_class}")
 
 # Example usage
 image_path = r'C:\CitiDev\japan_pipeline\data_set\Test image\6f7rch30.png'
