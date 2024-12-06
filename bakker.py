@@ -18,7 +18,6 @@ if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
 import os
-import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from yolo_classification_test import predict_image_class
@@ -40,10 +39,14 @@ logger = logging.getLogger()
 
 
 def process_image_pipeline(image_path, timeout=1800):
+    result_log = {"processing_steps": []}
+
     try:
+        result_log["processing_steps"].append(f"Processing started for image: {image_path}")
         logger.info(f"Processing started for image: {image_path}")
 
         def process():
+            result_log["processing_steps"].append("The image is sharp. Proceeding with classification...")
             logger.info("The image is sharp. Proceeding with classification...")
 
             model_path = r"C:\CitiDev\japan_pipeline\all_model\classification_model.pt"
@@ -51,36 +54,43 @@ def process_image_pipeline(image_path, timeout=1800):
 
             if classification_result:
                 predicted_label = classification_result
+                result_log["processing_steps"].append(f"Predicted Class: {predicted_label}")
+
                 if predicted_label == 'Driving License':
                     process_result = process_dl_image(image_path)
                     if process_result == 'Image is not good.':
                         return {"error": "Image is not good."}
+
+                    result_log["processing_steps"].append("Processing result: All four bounding boxes are present")
+                    result_log["processing_steps"].append("Processing result: All confidence scores are above the threshold of 0.7.")
+                    result_log["processing_steps"].append("Processing result: Image quality is good and all corners match.")
+
                     details = process_dl_information(image_path)
-                    return {
-                        "Predicted Class": "Driving License",
-                        "Bounding Boxes": "All four bounding boxes are present",
-                        "Confidence Scores": "All confidence scores are above the threshold of 0.7.",
-                        "Image Quality": "Image quality is good and all corners match.",
-                        "Detected Information": details,
-                    }
+                    result_log["details"] = details
+                    return result_log
 
                 elif predicted_label == 'Passport':
                     process_result = process_passport_image(image_path)
                     if process_result == 'Image is not good.':
                         return {"error": "Image is not good."}
+
                     details = process_Passport_information(image_path)
-                    return {"Predicted Class": "Passport", "Detected Information": details}
+                    result_log["details"] = details
+                    return result_log
 
                 elif predicted_label == 'Residence Card':
                     process_result = process_rc_image(image_path)
                     if process_result == 'Image is not good.':
                         return {"error": "Image is not good."}
+
                     details = process_RC_information(image_path)
-                    return {"Predicted Class": "Residence Card", "Detected Information": details}
+                    result_log["details"] = details
+                    return result_log
 
                 elif predicted_label == 'MNC':
                     details = process_MNC_information(image_path)
-                    return {"Predicted Class": "MNC", "Detected Information": details}
+                    result_log["details"] = details
+                    return result_log
 
                 else:
                     return {"error": "Class not recognized for further processing."}
