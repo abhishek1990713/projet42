@@ -17,62 +17,102 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 
-def process_dl_information(input_file_path):
-    # Load YOLO model
-    model = YOLO(driving_license_model_path)
+import logging
+import re
+from datetime import datetime
+from PIL import Image
+import numpy as np
+from paddleocr import PaddleOCR
+from yolov5 import YOLO
 
+# Setup logging
+logging.getLogger('ppocr').setLevel(logging.WARNING)
+
+# Define model paths
+det_model_dir = r"C:\CitiDev\text_ocr\paddle_model\Multilingual_PP-OCRv3_det_infer"
+rec_model_dir = r"C:\CitiDev\text_ocr\paddle_model\japan_PP-OCRv4_rec_infer"
+cls_model_dir = r"C:\CitiDev\text_ocr\paddle_model\ch_ppocr_mobile_v2.0_cls_infer"
+
+# Initialize OCR model
+ocr = PaddleOCR(lang='japan', use_angle_cls=False, use_gpu=False, det=True, rec=True, cls=False,
+                det_model_dir=det_model_dir,
+                rec_model_dir=rec_model_dir,
+                cls_model_dir=cls_model_dir)
+
+# Passport model path
+passport_model_path = r"C:\CitiDev\japan_pipeline\all_model\passport_information.pt"
+
+# Valid date range for passport issue and expiry
+valid_issue_date = datetime.strptime("22 AUG 2010", "%d %b %Y")
+valid_expiry_date = datetime.strptime("22 AUG 2029", "%d %b %Y")
+
+def process_passport_information(input_file_path):
+    # Load YOLO model for passport detection
+    model = YOLO(passport_model_path)
+    
     # Run YOLO model on the input image
     results = model(input_file_path)
-
-    # Open the input image
+    
+    # Open input image
     input_image = Image.open(input_file_path)
 
-    output = []  # To store results
-
-    # Process YOLO results
+    date_of_issue = None
+    date_of_expiry = None
+    output = []  # To collect results for returning
+    
+    # Process results from YOLO model
     for result in results:
         boxes = result.boxes
-
+        
         for box in boxes:
             cls_id = int(box.cls[0])
-            label = result.names[cls_id]  # Get the label from YOLO results
+            label = result.names[cls_id]  # Get label from YOLO
+            bbox = box.xyxy[0].tolist()  # Get bounding box coordinates
 
-            # Get bounding box coordinates
-            bbox = box.xyxy[0].tolist()
-
-            # Crop the detected area
+            # Crop the image to the detected box
             cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
-
-            # Convert cropped image to numpy array for OCR
             cropped_image_np = np.array(cropped_image)
 
-            # Perform OCR
+            # Perform OCR on the cropped image
             result_texts = ocr.ocr(cropped_image_np, cls=False)
-            extracted_text = (
-                " ".join([text[1][0] for text in result_texts[0]])
-                if result_texts and result_texts[0]
-                else ""
-            )
-
+            if result_texts and result_texts[0]:
+                extracted_text = " ".join([text[1][0] for text in result_texts[0]])
+            else:
+                extracted_text = ""
+            
+            # Collect the detected label and extracted text
             output.append(f"Detected Label: {label}, Extracted Text: {extracted_text}")
-
-            # Check for expiration date
-            if label == "Expiration date":
-                year_match = re.search(r"\d{4}年", extracted_text)
-                if year_match:
-                    year = int(year_match.group(0).replace("年", ""))
-                    output.append(f"Extracted Year: {year}")
-                    if min_expire_year <= year <= max_expire_year:
-                        output.append(f"Year {year} is within the valid range ({min_expire_year}-{max_expire_year}).")
-                    else:
-                        output.append(f"Year {year} is outside the valid range ({min_expire_year}-{max_expire_year}).")
-                else:
-                    output.append("Year not found in 'Expiration date' text.")
-
+            
+            # Check for Date of Issue and Date of Expiry
+            if label == "Date of issue":
+                try:
+                    date_of_issue = datetime.strptime(extracted_text, "%d %b %Y")
+                    output.append(f"Extracted Date of Issue: {date_of_issue}")
+                except ValueError:
+                    output.append(f"Could not parse Date of Issue: {extracted_text}")
+            
+            elif label == "Date of expiry":
+                try:
+                    date_of_expiry = datetime.strptime(extracted_text, "%d %b %Y")
+                    output.append(f"Extracted Date of Expiry: {date_of_expiry}")
+                except ValueError:
+                    output.append(f"Could not parse Date of Expiry: {extracted_text}")
+    
+    # Check if both dates were successfully extracted and validate them
+    if date_of_issue and date_of_expiry:
+        if valid_issue_date <= date_of_issue <= valid_expiry_date and date_of_expiry <= valid_expiry_date:
+            output.append("Passport is valid within the given date range.")
+        else:
+            output.append("Passport dates do not fall within the valid range.")
+    else:
+        output.append("One or both dates could not be extracted or are invalid.")
+    
     return output  # Return the collected results
 
 # Example usage
 input_file_path = r"path_to_your_image.jpg"
-results = process_dl_information(input_file_path)
+results = process_passport_information(input_file_path)
+
+# Print the results
 for res in results:
     print(res)
