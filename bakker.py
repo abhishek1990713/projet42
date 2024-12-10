@@ -20,168 +20,57 @@ if __name__ == '__main__':
 # constant.py
 # preprocess.py
 
+# app.py
+
 import cv2
-import numpy as np
-from PIL import Image, ImageEnhance
+import logging
+from preprocess import process_image
+from some_classification_module import predict_image_class  # Your model's classification import
 
-# Define the threshold values
-THRESHOLD = {
-    "blurriness": 50,
-    "brightness": (50, 200),
-    "contrast": 50,
-    "noise_level": 30,
-    "skew_angle": 5,
-    "text_area": 20
-}
+# Setup logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-# Blurriness check
-def check_blurriness(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return cv2.Laplacian(gray, cv2.CV_64F).var()
+def process_image_pipeline(image_path, timeout=1806):
+    result_log = {"processing_steps": []}
 
-# Blurriness adjustment
-def adjust_blurriness(image):
-    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    return cv2.filter2D(image, -1, kernel)
+    try:
+        result_log["processing_steps"].append(f"Processing started for image: {image_path}")
+        logger.info(f"Processing started for image: {image_path}")
 
-# Brightness check
-def check_brightness(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return np.mean(gray)
+        # Read the image from the path
+        image = cv2.imread(image_path)
 
-# Brightness adjustment
-def adjust_brightness(image, target=120):
-    brightness = check_brightness(image)
-    factor = target / brightness
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    enhancer = ImageEnhance.Brightness(pil_image)
-    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
+        # Step 1: Preprocess the image (from preprocess.py)
+        processed_image, metrics = process_image(image)
+        result_log["processing_steps"].append("Image preprocessing completed.")
+        logger.info("Image preprocessing completed.")
+        
+        # Add metrics to the result log
+        result_log["metrics"] = metrics
 
-# Contrast check
-def check_contrast(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return np.std(gray)
+        # Step 2: Classify the processed image
+        result_log["processing_steps"].append("Proceeding with classification...")
+        logger.info("Proceeding with classification...")
 
-# Contrast adjustment
-def adjust_contrast(image, factor=1.5):
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    enhancer = ImageEnhance.Contrast(pil_image)
-    return cv2.cvtColor(np.array(enhancer.enhance(factor)), cv2.COLOR_RGB2BGR)
+        # You can now call your classification model using the processed image
+        model_path = "C:\\CitiDev\\japan_pipeline\\all_model\\classification_model.pt"
+        classification_result = predict_image_class(model_path, processed_image)
 
-# Noise level check
-def check_noise_level(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 100, 200)
-    return np.mean(edges)
+        if classification_result:
+            predicted_label = classification_result
+            result_log["processing_steps"].append(f"Predicted Class: {predicted_label}")
+            logger.info(f"Predicted Class: {predicted_label}")
 
-# Denoising the image
-def denoise_image(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+    except Exception as e:
+        result_log["error"] = str(e)
+        logger.error(f"Error during processing: {e}")
 
-# Skew angle check
-def check_skew_angle(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blur, 50, 150, apertureSize=3)
-    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
-    angles = []
-    if lines is not None:
-        for rho, theta in lines[:, 0]:
-            angle = np.degrees(theta) - 90
-            if angle < -45:
-                angle += 90
-            elif angle > 45:
-                angle -= 90
-            angles.append(angle)
-    return np.median(angles) if angles else 0
-
-# Deskew the image
-def deskew_image(image, angle):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, -angle, 1.0)
-    return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-
-# Text area check
-def check_text_area(image):
-    if image is None:
-        raise ValueError("Image is not loaded correctly.")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    text_area = cv2.countNonZero(thresh)
-    total_area = image.shape[0] * image.shape[1]
-    return (text_area / total_area) * 100
-
-# Process image (all checks and adjustments)
-def process_image(image_path):
-    # Load the image
-    image = cv2.imread(image_path)
-
-    # Check if the image was loaded successfully
-    if image is None:
-        raise ValueError(f"Image at path {image_path} could not be loaded. Please check the file path.")
-
-    metrics = {}
-
-    # Blurriness
-    blurriness = check_blurriness(image)
-    metrics["blurriness_before"] = blurriness
-    if blurriness < THRESHOLD["blurriness"]:
-        image = adjust_blurriness(image)
-    metrics["blurriness_after"] = check_blurriness(image)
-
-    # Brightness
-    brightness = check_brightness(image)
-    metrics["brightness_before"] = brightness
-    if not (THRESHOLD["brightness"][0] <= brightness <= THRESHOLD["brightness"][1]):
-        image = adjust_brightness(image)
-    metrics["brightness_after"] = check_brightness(image)
-
-    # Contrast
-    contrast = check_contrast(image)
-    metrics["contrast_before"] = contrast
-    if contrast < THRESHOLD["contrast"]:
-        image = adjust_contrast(image)
-    metrics["contrast_after"] = check_contrast(image)
-
-    # Noise Level
-    noise_level = check_noise_level(image)
-    metrics["noise_level_before"] = noise_level
-    if noise_level > THRESHOLD["noise_level"]:
-        image = denoise_image(image)
-    metrics["noise_level_after"] = check_noise_level(image)
-
-    # Skew Angle
-    skew_angle = check_skew_angle(image)
-    metrics["skew_angle_before"] = skew_angle
-    if abs(skew_angle) > THRESHOLD["skew_angle"]:
-        image = deskew_image(image, skew_angle)
-    metrics["skew_angle_after"] = check_skew_angle(image)
-
-    # Text Area Coverage
-    text_area = check_text_area(image)
-    metrics["text_area_coverage"] = text_area
-
-    return image, metrics
-
+    return result_log
 
 # Example usage
-input_image_path = "C:\\CitiDev\\japan_pipeline\\data_set\\Test image acr\\Picture1.png"
-processed_image, image_metrics = process_image(input_image_path)
+image_path = "C:\\CitiDev\\japan_pipeline\\data_set\\Test image acr\\Picture1.png"
+result = process_image_pipeline(image_path)
 
-# Output the metrics
-print(image_metrics)
+# Output the result
+print(result)
