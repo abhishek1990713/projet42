@@ -36,6 +36,8 @@ THRESHOLD = {
 
 # Blurriness check
 def check_blurriness(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
@@ -46,6 +48,8 @@ def adjust_blurriness(image):
 
 # Brightness check
 def check_brightness(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return np.mean(gray)
 
@@ -59,6 +63,8 @@ def adjust_brightness(image, target=120):
 
 # Contrast check
 def check_contrast(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return np.std(gray)
 
@@ -70,16 +76,22 @@ def adjust_contrast(image, factor=1.5):
 
 # Noise level check
 def check_noise_level(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 100, 200)
     return np.mean(edges)
 
 # Denoising the image
 def denoise_image(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
 
 # Skew angle check
 def check_skew_angle(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 50, 150, apertureSize=3)
@@ -97,6 +109,8 @@ def check_skew_angle(image):
 
 # Deskew the image
 def deskew_image(image, angle):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, -angle, 1.0)
@@ -104,6 +118,8 @@ def deskew_image(image, angle):
 
 # Text area check
 def check_text_area(image):
+    if image is None:
+        raise ValueError("Image is not loaded correctly.")
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
     text_area = cv2.countNonZero(thresh)
@@ -111,7 +127,14 @@ def check_text_area(image):
     return (text_area / total_area) * 100
 
 # Process image (all checks and adjustments)
-def process_image(image):
+def process_image(image_path):
+    # Load the image
+    image = cv2.imread(image_path)
+
+    # Check if the image was loaded successfully
+    if image is None:
+        raise ValueError(f"Image at path {image_path} could not be loaded. Please check the file path.")
+
     metrics = {}
 
     # Blurriness
@@ -154,3 +177,11 @@ def process_image(image):
     metrics["text_area_coverage"] = text_area
 
     return image, metrics
+
+
+# Example usage
+input_image_path = "C:\\CitiDev\\japan_pipeline\\data_set\\Test image acr\\Picture1.png"
+processed_image, image_metrics = process_image(input_image_path)
+
+# Output the metrics
+print(image_metrics)
