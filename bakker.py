@@ -39,25 +39,33 @@ THRESHOLD = {
 
 # Ensure DPI is at least 300
 def check_and_adjust_dpi(image_path):
+    metrics = {}
     with Image.open(image_path) as img:
         dpi = img.info.get("dpi", (72, 72))  # Default DPI is 72 if not set
+        metrics["dpi_before"] = dpi
         if dpi[0] < THRESHOLD["dpi"] or dpi[1] < THRESHOLD["dpi"]:
             # Update DPI to 300
             updated_path = image_path.replace(".png", "_updated.png")
             img.save(updated_path, dpi=(300, 300))
-            return updated_path
-        return image_path
+            metrics["dpi_after"] = (300, 300)
+            return updated_path, metrics
+        metrics["dpi_after"] = dpi
+        return image_path, metrics
 
 # Ensure image dimensions are at least 550x330
 def check_and_resize_dimensions(image):
+    metrics = {}
     height, width = image.shape[:2]
+    metrics["image_size_before"] = (width, height)
     if width < THRESHOLD["min_width"] or height < THRESHOLD["min_height"]:
         # Resize image while maintaining aspect ratio
         new_width = max(THRESHOLD["min_width"], width)
         new_height = max(THRESHOLD["min_height"], height)
         resized_image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-        return resized_image
-    return image
+        metrics["image_size_after"] = (new_width, new_height)
+        return resized_image, metrics
+    metrics["image_size_after"] = (width, height)
+    return image, metrics
 
 # Blurriness check
 def check_blurriness(image):
@@ -140,7 +148,8 @@ def process_image(image_path):
     metrics = {}
 
     # Step 1: Check and adjust DPI
-    image_path = check_and_adjust_dpi(image_path)
+    image_path, dpi_metrics = check_and_adjust_dpi(image_path)
+    metrics.update(dpi_metrics)
 
     # Step 2: Load image using OpenCV
     image = cv2.imread(image_path)
@@ -148,7 +157,8 @@ def process_image(image_path):
         raise ValueError(f"Unable to load image at {image_path}")
 
     # Step 3: Check and adjust dimensions
-    image = check_and_resize_dimensions(image)
+    image, size_metrics = check_and_resize_dimensions(image)
+    metrics.update(size_metrics)
 
     # Step 4: Blurriness
     blurriness = check_blurriness(image)
