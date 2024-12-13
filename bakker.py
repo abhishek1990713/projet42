@@ -35,11 +35,7 @@ logger.setLevel(logging.DEBUG)
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# FastText language detection model path
-fasttext_model_path = "/content/drive/MyDrive/amz12/lid.176.bin"  # Replace with your actual FastText model path
-lang_model = fasttext.load_model(fasttext_model_path)
-
-import fasttext
+# Model and tokenizer paths
 save_path = "/content/drive/MyDrive/amz12/models--facebook--nllb-200-1.3B"
 
 # Load the tokenizer and model from the specified local paths
@@ -58,13 +54,15 @@ class LanguageCodes(Enum):
 
 
 class TranslationService:
-    def __init__(self, text: str, target_lang: str):
+    def __init__(self, text: str, src_lang: str, target_lang: str):
         """
         Initialize the translation service.
         :param text: The text to translate.
-        :param target_lang: Target language (as defined in LanguageCodes Enum).
+        :param src_lang: Source language code (as defined in LanguageCodes Enum).
+        :param target_lang: Target language code (as defined in LanguageCodes Enum).
         """
         self.text = text
+        self.src_lang = src_lang
         self.target_lang = target_lang
 
     def translate(self):
@@ -73,16 +71,14 @@ class TranslationService:
         :return: Translated text.
         """
         try:
-            # Validate target language
+            # Validate source and target languages
+            if self.src_lang not in LanguageCodes.__members__:
+                raise ValueError(f"Unsupported source language: {self.src_lang}")
             if self.target_lang not in LanguageCodes.__members__:
                 raise ValueError(f"Unsupported target language: {self.target_lang}")
 
+            src_lang_code = LanguageCodes[self.src_lang].value
             target_lang_code = LanguageCodes[self.target_lang].value
-
-            # Detect source language
-            src_lang_prediction = lang_model.predict(self.text)
-            src_lang_code = src_lang_prediction[0][0].replace("__label__", "")
-            logger.info(f"Detected source language: {src_lang_code}")
 
             # Prepare the translation pipeline
             translator = pipeline(
@@ -114,15 +110,12 @@ class TranslationService:
 if __name__ == "__main__":
     # Example usage
     sample_text = "This is a test text to translate."
+    source_language = "English"  # Change to match the LanguageCodes Enum
     target_language = "Vietnamese"
 
-    translator = TranslationService(sample_text, target_language)
+    translator = TranslationService(sample_text, source_language, target_language)
     try:
         translated_output = translator.main()
         print("Translated Text:", translated_output)
     except Exception as e:
         print(f"Error during translation: {e}")
-
-
-# preprocess.py
-https://www.kaggle.com/models/abhishekmashar/language-pre
