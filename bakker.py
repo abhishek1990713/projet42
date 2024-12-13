@@ -16,40 +16,17 @@ if __name__ == '__main__':
     
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.trainers import BpeTrainer
+from transformers import AutoTokenizer
 
-# Define your small text directly as a string
-small_text = """
-This is a test sentence for tokenizer training.
-The tokenizer will learn from this text data.
-Another example sentence to train the tokenizer.
-"""
+# Load tokenizer from saved path
+save_path = "/content/drive/MyDrive/lang/tokenizer"
+tokenizer = AutoTokenizer.from_pretrained(save_path)
 
-# Save this small text to a temporary file for tokenizer training
-with open("temp_text.txt", "w") as file:
-    file.write(small_text)
-
-# Initialize the tokenizer
-tokenizer = Tokenizer(BPE())
-tokenizer.pre_tokenizer = Whitespace()
-
-# Specify the file path of the temporary text file
-files = ["temp_text.txt"]
-
-# Initialize the trainer with desired parameters (e.g., vocab size)
-trainer = BpeTrainer(vocab_size=30000, special_tokens=["<pad>", "<s>", "</s>", "<unk>"])
-
-# Train the tokenizer
-tokenizer.train(files, trainer)
-
-# Save the trained tokenizer to a file
-tokenizer.save("tokenizer.json")
-print("Tokenizer saved successfully!")
-
-# Optional: Test the tokenizer
-text = "This is a test sentence."
-tokens = tokenizer.encode(text)
-print("Tokens:", tokens.tokens)
+print("Tokenizer loaded successfully!")
+text = "This is a test sentence for tokenization."
+tokens = tokenizer.tokenize(text)
+input_ids = tokenizer.encode(text, return_tensors="pt")
+print("Tokens:", tokens)
+print("Input IDs:", input_ids)
+decoded_text = tokenizer.decode(input_ids[0])
+print("Decoded Text:", decoded_text)
