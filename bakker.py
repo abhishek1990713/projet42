@@ -20,41 +20,36 @@ from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
-from tokenizers.processors import TemplateProcessing
 
-# Step 1: Initialize a tokenizer
+# Define your small text directly as a string
+small_text = """
+This is a test sentence for tokenizer training.
+The tokenizer will learn from this text data.
+Another example sentence to train the tokenizer.
+"""
+
+# Save this small text to a temporary file for tokenizer training
+with open("temp_text.txt", "w") as file:
+    file.write(small_text)
+
+# Initialize the tokenizer
 tokenizer = Tokenizer(BPE())
-
-# Step 2: Set pre-tokenizer
 tokenizer.pre_tokenizer = Whitespace()
 
-# Step 3: Train the tokenizer (on your dataset)
+# Specify the file path of the temporary text file
+files = ["temp_text.txt"]
+
+# Initialize the trainer with desired parameters (e.g., vocab size)
 trainer = BpeTrainer(vocab_size=30000, special_tokens=["<pad>", "<s>", "</s>", "<unk>"])
-files = ["path_to_your_dataset.txt"]  # Replace with the path to your training data
+
+# Train the tokenizer
 tokenizer.train(files, trainer)
 
-# Step 4: Add a post-processor (optional)
-tokenizer.post_processor = TemplateProcessing(
-    single="<s> $A </s>",
-    pair="<s> $A </s> </s> $B </s>",
-    special_tokens=[("<s>", 1), ("</s>", 2)],
-)
+# Save the trained tokenizer to a file
+tokenizer.save("tokenizer.json")
+print("Tokenizer saved successfully!")
 
-# Step 5: Save the tokenizer
-save_path = "path_to_save_tokenizer"
-tokenizer.save(f"{save_path}/tokenizer.json")
-print(f"Tokenizer saved to: {save_path}")
-
-# Step 6: Load the tokenizer from the saved path
-loaded_tokenizer = Tokenizer.from_file(f"{save_path}/tokenizer.json")
-print("Tokenizer loaded successfully!")
-
-# Step 7: Test the tokenizer
-test_sentence = "This is a test sentence for tokenization."
-output = loaded_tokenizer.encode(test_sentence)
-
-print("Tokens:", output.tokens)
-print("Input IDs:", output.ids)
-decoded_text = loaded_tokenizer.decode(output.ids)
-print("Decoded Text:", decoded_text)
-
+# Optional: Test the tokenizer
+text = "This is a test sentence."
+tokens = tokenizer.encode(text)
+print("Tokens:", tokens.tokens)
