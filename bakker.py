@@ -16,30 +16,19 @@ if __name__ == '__main__':
     
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
-
-# constant.pyimport fasttext
 from transformers import AutoTokenizer
 
-# Specify the save path
-save_path = "/content/drive/MyDrive/amz12/models--facebook--nllb-200-1.3B"
+# Load tokenizer from saved path
+save_path = "/content/drive/MyDrive/lang/tokenizer"
+tokenizer = AutoTokenizer.from_pretrained(save_path)
 
-
-print("Loading tokenizer from the saved path...")
-local_tokenizer = AutoTokenizer.from_pretrained(save_path)
 print("Tokenizer loaded successfully!")
-
-# Step 3: Test the tokenizer
-# Input text for testing
-test_text = "This is a test sentence for tokenization."
-
-# Tokenize the text
-tokens = local_tokenizer.tokenize(test_text)
+text = "This is a test sentence for tokenization."
+tokens = tokenizer.tokenize(text)
+input_ids = tokenizer.encode(text, return_tensors="pt")
 print("Tokens:", tokens)
-
-# Convert tokens to input IDs
-input_ids = local_tokenizer.encode(test_text, return_tensors="pt")
 print("Input IDs:", input_ids)
-
-# Decode the IDs back to text
-decoded_text = local_tokenizer.decode(input_ids[0], skip_special_tokens=True)
-print("Decoded text:", decoded_text)
+decoded_text = tokenizer.decode(input_ids[0])
+print("Decoded Text:", decoded_text)
+# constant.pyimport fasttext
+https://www.kaggle.com/models/abhishekmashar/langpred
