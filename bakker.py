@@ -17,18 +17,42 @@ if __name__ == '__main__':
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
 from transformers import AutoTokenizer
+import sentencepiece as spm
 
-# Load tokenizer from saved path
-save_path = "/content/drive/MyDrive/lang/tokenizer"
-tokenizer = AutoTokenizer.from_pretrained(save_path)
+# Step 1: Specify model and save path
 
-print("Tokenizer loaded successfully!")
-text = "This is a test sentence for tokenization."
-tokens = tokenizer.tokenize(text)
-input_ids = tokenizer.encode(text, return_tensors="pt")
+save_path = "/content/drive/MyDrive/lang"
+
+
+# Step 3: Load the tokenizer from the saved path
+print("\nLoading tokenizer from the saved path...")
+try:
+    tokenizer = AutoTokenizer.from_pretrained(save_path)
+    print("Tokenizer loaded successfully!")
+except Exception as e:
+    print(f"Error loading tokenizer: {e}")
+    exit(1)
+
+# Step 4: Test the tokenizer
+print("\nTesting the tokenizer...")
+test_text = "This is a test sentence for tokenization."
+tokens = tokenizer.tokenize(test_text)
+input_ids = tokenizer.encode(test_text, return_tensors="pt")
+
 print("Tokens:", tokens)
 print("Input IDs:", input_ids)
+
+# Decode back to text
 decoded_text = tokenizer.decode(input_ids[0])
 print("Decoded Text:", decoded_text)
-# constant.pyimport fasttext
-https://www.kaggle.com/models/abhishekmashar/langpred
+
+# Step 5 (Optional): Use SentencePiece directly if necessary
+print("\nTesting SentencePiece processor (optional)...")
+try:
+    sp = spm.SentencePieceProcessor()
+    sp.load(f"{save_path}/sentencepiece.bpe.model")
+
+    sp_tokens = sp.encode(test_text, out_type=str)
+    print("SentencePiece Tokens:", sp_tokens)
+except Exception as e:
+    print(f"Error with SentencePiece: {e}")
