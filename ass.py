@@ -46,46 +46,36 @@ def Upload():
     # return str(result)
     return None
 
-
 import cv2
 import numpy as np
 import os
 import pytesseract
+from pdf2image import convert_from_path
 import pandas as pd
 from sklearn import metrics
+import shutil
 
-# Set Tesseract command path
-pytesseract.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+# Tesseract configuration (ensure Tesseract OCR is correctly installed)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # Function to adjust brightness and contrast
 def adjust_brightness_contrast(image, brightness=0, contrast=0):
-    image = np.int16(image)  # Convert to int16 to avoid overflow during operations
-
-    # Check if the image is colored (3 channels)
-    if len(image.shape) == 3:
-        image = image * (contrast / 127 + 1) - contrast + brightness
-    else:
-        # If the image is grayscale (1 channel), apply contrast and brightness to a single channel
-        image = image * (contrast / 127 + 1) - contrast + brightness
-
-    image = np.clip(image, 0, 255)  # Ensure pixel values are within the valid range
-    return np.uint8(image)  # Convert back to uint8 for image saving
+    image = np.int16(image)
+    image = image * (contrast / 127 + 1) - contrast + brightness
+    image = np.clip(image, 0, 255)
+    return np.uint8(image)
 
 # Function to denoise image
 def denoise_image(image):
     return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
 
-# Function to blur image
-def blur_image(image):
-    return cv2.GaussianBlur(image, (5,5), 0)
-
 # Function to apply thresholding
 def apply_threshold(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     return cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
 
-# Function to apply morphological operation
+# Function to apply morphological operations
 def morphological_operations(image):
     kernel = np.ones((3, 3), np.uint8)
     image = cv2.dilate(image, kernel, iterations=1)
@@ -106,46 +96,41 @@ def is_colored(image):
     else:
         raise ValueError("Unsupported image format")
 
-# Function to save processed images and return filenames
+# Function to save processed images and show them
 def save_and_show(images, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
     filenames = []
     for i, (desc, img) in enumerate(images):
         filename = os.path.join(output_dir, f'{desc}.jpg')
         cv2.imwrite(filename, img)
         filenames.append(filename)
         print(f"Saved: {filename}")
-
     return filenames
 
-# Function to extract text with Tesseract OCR
+# Function to extract text with Tesseract
 def extract_text_with_tesseract(image, lang='eng'):
     try:
         config = "--psm 3"
         text = pytesseract.image_to_string(image, config=config, lang=lang)
-        print("Extracted text: ", text)
+        print(f"Extracted text: {text}")
         return text.strip()
     except Exception as e:
-        print("Error extracting text:", e)
+        print(f"Error extracting text: {e}")
         return ""
 
 # Function to calculate image metrics
 def calculate_metrics(image):
-    metrics = {}
-    metrics['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
-
+    metrics_dict = {}
+    metrics_dict['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-
-    metrics['blurriness'] = laplacian_var
+    metrics_dict['blurriness'] = laplacian_var
     noise_estimation = np.std(image)
-    metrics['noise_level'] = noise_estimation
+    metrics_dict['noise_level'] = noise_estimation
+    return metrics_dict
 
-    return metrics
-
-# Function to get image size in KB or MB
+# Function to calculate image size
 def get_image_size(file_path):
     size_in_bytes = os.path.getsize(file_path)
     size_in_kb = size_in_bytes / 1024
@@ -159,7 +144,7 @@ def get_image_size(file_path):
 def save_metrics_to_excel(metrics_list, excel_path):
     df = pd.DataFrame(metrics_list)
     df.to_excel(excel_path, index=False, engine='openpyxl')
-    print(f"Metrics saved as: {excel_path}")
+    print(f"Metrics saved to: {excel_path}")
 
 # Function to calculate PSNR
 def calculate_psnr(original, processed):
@@ -167,78 +152,96 @@ def calculate_psnr(original, processed):
     if mse == 0:
         return float('inf')
     max_pixel = 255.0
-    psnr = 10 * np.log10((max_pixel ** 2) / mse)
+    psnr = 10 * np.log10(max_pixel ** 2 / mse)
     return psnr
 
-# Function to process images from a folder
-def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="eng"):
-    valid_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
-    image_paths = [os.path.join(input_folder, file) for file in os.listdir(input_folder) if file.lower().endswith(valid_extensions)]
-    
-    if not image_paths:
-        raise ValueError(f"No image files found in the folder: {input_folder}")
-    
-    post_output_dir = os.path.join(output_dir, "PostProcessed")
-    os.makedirs(post_output_dir, exist_ok=True)
+# Convert PDF to images
+def convert_pdf_to_images(pdf_path):
+    try:
+        images = convert_from_path(pdf_path, 300)  # Convert PDF to images at 300 DPI
+        image_list = []
+        for i, image in enumerate(images):
+            image_path = os.path.join(output_dir, f"page_{i + 1}.png")
+            image.save(image_path, 'PNG')
+            image_list.append(image_path)
+        return image_list
+    except Exception as e:
+        print(f"Error converting PDF to images: {e}")
+        return []
+
+# Main function to process images or PDFs
+def process_input(input_path, output_dir, excel_path, ocr_lang="eng"):
     metric_list = []
+
+    if input_path.lower().endswith('.pdf'):
+        image_paths = convert_pdf_to_images(input_path)
+    else:
+        valid_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
+        image_paths = [os.path.join(input_path, file) for file in os.listdir(input_path) if file.lower().endswith(valid_extensions)]
+
+    if not image_paths:
+        print(f"No images found in the input: {input_path}")
+        return
 
     for image_path in image_paths:
         image = cv2.imread(image_path)
         if image is None:
             print(f"Failed to load image: {image_path}. Skipping...")
             continue
-        
-        try:
-            print(f"Processing image: {image_path}")
-            image_name = os.path.basename(image_path)
-            original_size = get_image_size(image_path)
-            
-            # Pre-metrics
-            pre_metrics = calculate_metrics(image)
-            pre_metrics['original_size'] = original_size
-            
-            # Preprocessing (colored or grayscale)
-            if is_colored(image):
-                print("Image is colored. Applying preprocessing...")
-                denoised = denoise_image(image)
-                adjusted = adjust_brightness_contrast(denoised, brightness=30, contrast=30)
-                preprocessed = adjusted
-            else:
-                print("Image is black-and-white. Applying preprocessing...")
-                blurred = blur_image(image)
-                preprocessed = apply_threshold(blurred)
-            
-            # Morphological operations
-            morphed = morphological_operations(preprocessed)
-            processed_image_path = os.path.join(post_output_dir, f"processed_{image_name}")
-            cv2.imwrite(processed_image_path, morphed)
-            
-            # Post-processing metrics
-            post_metrics = calculate_metrics(morphed)
-            post_metrics['processed_size'] = get_image_size(processed_image_path)
-            post_metrics['psnr'] = f"{calculate_psnr(image, morphed):.2f} dB"
-            
-            # Add metrics to list in the specified sequence
-            metric_list.append({
-                'image_name': image_name,
-                'pre_original_size': pre_metrics['original_size'],
-                'pre_image_size': pre_metrics['image_size'],
-                'pre_blurriness': pre_metrics['blurriness'],
-                'pre_noise_level': pre_metrics['noise_level'],
-                'post_processed_size': post_metrics['processed_size'],
-                'post_image_size': post_metrics['image_size'],
-                'post_blurriness': post_metrics['blurriness'],
-                'post_noise_level': post_metrics['noise_level'],
-                'pre_psnr': 'N/A',  # PSNR is not applicable for pre-processing
-                'post_psnr': post_metrics['psnr']
-            })
-        except Exception as e:
-            print(f"Error processing image: {image_path}. Error: {e}")
+
+        print(f"Processing image: {image_path}")
+        pre_metrics = calculate_metrics(image)
+        pre_metrics['image_name'] = os.path.basename(image_path)
+        pre_metrics['original_size'] = get_image_size(image_path)
+
+        if is_colored(image):
+            print("Image is colored. Applying preprocessing...")
+            denoised = denoise_image(image)
+            adjusted = adjust_brightness_contrast(denoised, brightness=30, contrast=30)
+            preprocessed = adjusted
+        else:
+            print("Image is black-and-white. Applying preprocessing...")
+            blurred = cv2.GaussianBlur(image, (5, 5), 0)
+            thresholded = apply_threshold(blurred)
+            preprocessed = thresholded
+
+        if preprocessed is None:
+            print(f"Preprocessing failed for {image_path}")
             continue
-    
-    # Save metrics to Excel
+
+        morphed = morphological_operations(preprocessed)
+        if morphed is None:
+            print(f"Morphological operation failed for {image_path}")
+            continue
+
+        processed_image_path = os.path.join(output_dir, f"processed_{os.path.basename(image_path)}")
+        cv2.imwrite(processed_image_path, morphed)
+
+        post_metrics = calculate_metrics(morphed)
+        post_metrics['image_name'] = os.path.basename(image_path)
+        post_metrics['processed_size'] = get_image_size(processed_image_path)
+
+        psnr_value = calculate_psnr(image, morphed)
+        post_metrics['psnr'] = f"{psnr_value:.2f} dB"
+
+        ocr_text = extract_text_with_tesseract(morphed, lang=ocr_lang)
+        ocr_text_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(image_path))[0]}.txt")
+        with open(ocr_text_path, 'w', encoding='utf-8') as f:
+            f.write(ocr_text)
+
+        combined_metrics = {**pre_metrics, **post_metrics}
+        metric_list.append(combined_metrics)
+
     if metric_list:
         save_metrics_to_excel(metric_list, excel_path)
-        print("Batch processing completed. Metrics saved to Excel.")
+        print(f"Metrics saved to: {excel_path}")
     else:
-        print("No image processed successfully.")
+        print("No images processed successfully.")
+
+# Example usage
+input_path = "C:\\path\\to\\input"  # Folder or PDF path
+output_dir = "C:\\path\\to\\output"
+excel_path = "C:\\path\\to\\save\\metrics.xlsx"
+
+process_input(input_path, output_dir, excel_path, ocr_lang="eng")
+
