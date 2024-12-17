@@ -104,9 +104,21 @@ def calculate_psnr(original, processed):
     psnr = 10 * np.log10((max_pixel ** 2) / mse)
     return psnr
 
-# Function to save metrics to an Excel file
+# Function to save metrics to an Excel file in a specific sequence
 def save_metrics_to_excel(metrics_list, excel_path):
-    df = pd.DataFrame(metrics_list)
+    df = pd.DataFrame(metrics_list, columns=[
+        'image_name', 
+        'pre_original_size', 
+        'pre_image_size', 
+        'pre_blurriness', 
+        'pre_noise_level', 
+        'post_processed_size', 
+        'post_image_size', 
+        'post_blurriness', 
+        'post_noise_level', 
+        'pre_psnr', 
+        'post_psnr'
+    ])
     df.to_excel(excel_path, index=False, engine='openpyxl')
     print(f"Metrics saved to: {excel_path}")
 
@@ -135,7 +147,6 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
             
             # Pre-metrics
             pre_metrics = calculate_metrics(image)
-            pre_metrics['image_name'] = image_name
             pre_metrics['original_size'] = original_size
             
             if is_colored(image):
@@ -155,21 +166,23 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
             
             # Post-processing metrics
             post_metrics = calculate_metrics(morphed)
-            post_metrics['image_name'] = image_name
             post_metrics['processed_size'] = get_image_size(processed_image_path)
             post_metrics['psnr'] = f"{calculate_psnr(image, morphed):.2f} dB"
             
-            # OCR
-            ocr_text = extract_text_with_tesseract(morphed, lang=ocr_lang)
-            ocr_text_path = os.path.join(post_output_dir, f"{os.path.splitext(image_name)[0]}.txt")
-            with open(ocr_text_path, 'w', encoding="utf-8") as f:
-                f.write(ocr_text)
-            print(f"OCR result saved for {image_name} at: {ocr_text_path}")
-            
-            # Combine pre and post metrics for Excel
-            combined_metrics = {**{'pre_' + k: v for k, v in pre_metrics.items()},
-                                **{'post_' + k: v for k, v in post_metrics.items()}}
-            metric_list.append(combined_metrics)
+            # Add metrics to list in the specified sequence
+            metric_list.append({
+                'image_name': image_name,
+                'pre_original_size': pre_metrics['original_size'],
+                'pre_image_size': pre_metrics['image_size'],
+                'pre_blurriness': pre_metrics['blurriness'],
+                'pre_noise_level': pre_metrics['noise_level'],
+                'post_processed_size': post_metrics['processed_size'],
+                'post_image_size': post_metrics['image_size'],
+                'post_blurriness': post_metrics['blurriness'],
+                'post_noise_level': post_metrics['noise_level'],
+                'pre_psnr': 'N/A',  # PSNR is not applicable for pre-processing
+                'post_psnr': post_metrics['psnr']
+            })
         except Exception as e:
             print(f"Error processing image: {image_path}. Error: {e}")
             continue
