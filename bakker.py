@@ -16,62 +16,194 @@ if __name__ == '__main__':
     
     # Run the Flask app with SSL enabled
     app.run(host='127.0.0.1', port=8013, ssl_context=context)
-import logging
-import fasttext
+import cv2
+import numpy as np
+import os
+import pytesseract
+import pandas as pd
+from sklearn import metrics
 
-# Configure logging
-logging.basicConfig(
-    filename="language_detection.log",
-    format="%(asctime)s %(message)s",
-    filemode="a",
-)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# FastText language detection model path
-fasttext_model_path = "/content/drive/MyDrive/amz12/lid.176.bin"  # Replace with your actual FastText model path
+# Function to adjust brightness and contrast
+def adjust_brightness_contrast(image, brightness=0, contrast=0):
+    image = np.int16(image)
+    image = image * (contrast / 127 + 1) - contrast + brightness
+    image = np.clip(image, 0, 255)
+    return np.uint8(image)
 
-# Load the FastText model
-lang_model = fasttext.load_model(fasttext_model_path)
+# Function to denoise the image
+def denoise_image(image):
+    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
 
-class LanguageDetectionService:
-    def __init__(self, text: str):
-        """
-        Initialize the language detection service.
-        :param text: The text to detect the language.
-        """
-        self.text = text
+# Function to blur the image
+def blur_image(image):
+    return cv2.GaussianBlur(image, (5, 5), 0)
 
-    def detect_language(self):
-        """
-        Perform language detection on the input text.
-        :return: Detected language.
-        """
-        try:
-            # Detect the language
-            lang_prediction = lang_model.predict(self.text)
-            lang_code = lang_prediction[0][0].replace("__label__", "")
-            logger.info(f"Detected language: {lang_code}")
-            return lang_code
-        except Exception as e:
-            logger.error(f"Language detection failed: {str(e)}")
-            raise
+# Function to apply thresholding
+def apply_threshold(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    return thresh
 
-    def main(self):
-        """
-        Main function to execute the language detection process.
-        :return: Detected language.
-        """
-        return self.detect_language()
+# Function to apply morphological operations
+def morphological_operations(image):
+    kernel = np.ones((3, 3), np.uint8)
+    image = cv2.dilate(image, kernel, iterations=1)
+    image = cv2.erode(image, kernel, iterations=1)
+    return image
 
+# Function to resize the image
+def resize_image(image, width, height):
+    return cv2.resize(image, (width, height))
 
-if __name__ == "__main__":
-    # Example usage
-    sample_text = "This is a test text to detect language."
+# Function to check if the image is colored
+def is_colored(image):
+    if len(image.shape) == 2:
+        return False
+    elif len(image.shape) == 3:
+        b, g, r = cv2.split(image)
+        return not (np.array_equal(b, g) and np.array_equal(b, r))
+    else:
+        raise ValueError("Unsupported image format")
 
-    lang_detector = LanguageDetectionService(sample_text)
+# Function to save and show images
+def save_and_show(images, output_dir):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    filenames = []
+    for desc, img in images:
+        filename = os.path.join(output_dir, f'{desc}.jpg')
+        cv2.imwrite(filename, img)
+        filenames.append(filename)
+        print(f"Saved: {filename}")
+    return filenames
+
+# Function to extract text with Tesseract OCR
+def extract_text_with_tesseract(image, lang='eng'):
     try:
-        detected_language = lang_detector.main()
-        print("Detected Language:", detected_language)
+        config = "--psm 3"
+        text = pytesseract.image_to_string(image, config=config, lang=lang)
+        print(f"Extracted text: {text}")
+        return text.strip()
     except Exception as e:
-        print(f"Error during language detection: {e}")
+        print(f"Error extracting text: {e}")
+        return ""
+
+# Function to calculate image metrics
+def calculate_metrics(image):
+    metrics = {}
+    metrics['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    noise_estimation = np.std(image)
+    metrics['blurriness'] = laplacian_var
+    metrics['noise_level'] = noise_estimation
+    return metrics
+
+# Function to get image size
+def get_image_size(file_path):
+    size_in_bytes = os.path.getsize(file_path)
+    size_in_kb = size_in_bytes / 1024
+    size_in_mb = size_in_kb / 1024
+    if size_in_mb >= 1:
+        return f"{size_in_mb:.2f} MB"
+    else:
+        return f"{size_in_kb:.2f} KB"
+
+# Function to save metrics to Excel
+def save_metrics_to_excel(metrics_list, excel_path):
+    df = pd.DataFrame(metrics_list)
+    df.to_excel(excel_path, index=False, engine='openpyxl')
+    print(f"Metrics saved as: {excel_path}")
+
+# Function to calculate PSNR
+def calculate_psnr(original, processed):
+    mse = np.mean((original - processed) ** 2)
+    if mse == 0:
+        return float('inf')
+    max_pixel = 255.0
+    psnr = 10 * np.log10(max_pixel ** 2 / mse)
+    return psnr
+
+# Main function to process images from a folder
+def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="eng"):
+    valid_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
+    image_paths = [os.path.join(input_folder, file) for file in os.listdir(input_folder) if file.lower().endswith(valid_extensions)]
+    
+    if not image_paths:
+        raise ValueError(f"No image file found in the folder: {input_folder}")
+    
+    metric_list = []
+    post_output_dir = os.path.join(output_dir, "PostProcessed")
+    os.makedirs(post_output_dir, exist_ok=True)
+
+    for image_path in image_paths:
+        image = cv2.imread(image_path)
+        if image is None:
+            print(f"Failed to load image: {image_path}. Skipping...")
+            continue
+        
+        try:
+            print(f"Processing image: {image_path}")
+            image_name = os.path.basename(image_path)
+            original_size = get_image_size(image_path)
+            
+            # Preprocessing
+            pre_metrics = calculate_metrics(image)
+            pre_metrics['image_name'] = image_name
+            pre_metrics['original_size'] = original_size
+            
+            if is_colored(image):
+                print("Image is colored. Applying preprocessing...")
+                denoised = denoise_image(image)
+                adjusted = adjust_brightness_contrast(denoised, brightness=30, contrast=30)
+                preprocessed = adjusted
+            else:
+                print("Image is black-and-white. Applying preprocessing...")
+                blurred = blur_image(image)
+                preprocessed = apply_threshold(blurred)
+            
+            morphed = morphological_operations(preprocessed)
+            processed_image_path = os.path.join(post_output_dir, f"processed_{image_name}")
+            cv2.imwrite(processed_image_path, morphed)
+            
+            processed_size = get_image_size(processed_image_path)
+            psnr_value = calculate_psnr(image, morphed)
+            print(f"PSNR: {psnr_value:.2f} dB")
+            
+            # Post-processing metrics
+            post_metrics = calculate_metrics(morphed)
+            post_metrics['image_name'] = image_name
+            post_metrics['processed_size'] = processed_size
+            post_metrics['psnr'] = f"{psnr_value:.2f} dB"
+            
+            # OCR
+            ocr_text = extract_text_with_tesseract(morphed, lang=ocr_lang)
+            ocr_text_path = os.path.join(post_output_dir, f"{os.path.splitext(image_name)[0]}.txt")
+            with open(ocr_text_path, 'w', encoding="utf-8") as f:
+                f.write(ocr_text)
+            print(f"OCR result saved for {image_name} at: {ocr_text_path}")
+            
+            # Combine metrics
+            combined_metrics = {**pre_metrics, **post_metrics}
+            metric_list.append(combined_metrics)
+        except Exception as e:
+            print(f"Error processing image: {image_path}. Error: {e}")
+            continue
+    
+    if metric_list:
+        save_metrics_to_excel(metric_list, excel_path)
+        print("Batch processing completed. Metrics saved to Excel.")
+    else:
+        print("No image processed successfully.")
+
+# Input paths
+input_folder = r"C:\CitiDev\preprocessing\Input"
+output_dir = r"C:\CitiDev\preprocessing\Output"
+excel_path = r"C:\CitiDev\preprocessing\Xlsx\metrics.xlsx"
+ocr_lang = 'eng'
+
+# Run the process
+process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang)
+print("Image preprocessing completed.")
