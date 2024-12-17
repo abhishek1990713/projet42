@@ -49,7 +49,6 @@ def Upload():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
 import cv2
 import numpy as np
 import os
@@ -57,7 +56,7 @@ import pytesseract
 import pandas as pd
 from sklearn import metrics
 
-# Set the Tesseract executable path
+# Tesseract command setup
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # Function to adjust brightness and contrast
@@ -69,7 +68,10 @@ def adjust_brightness_contrast(image, brightness=0, contrast=0):
 
 # Function to denoise image
 def denoise_image(image):
-    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+    if len(image.shape) == 3:
+        return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+    else:
+        return cv2.fastNlMeansDenoising(image, None, 10, 7, 21)
 
 # Function to blur image
 def blur_image(image):
@@ -77,7 +79,12 @@ def blur_image(image):
 
 # Function to apply thresholding
 def apply_threshold(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Ensure image is grayscale before thresholding
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image  # If it's already grayscale, no need to convert
+
     _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     return thresh
 
@@ -88,38 +95,49 @@ def morphological_operations(image):
     image = cv2.erode(image, kernel, iterations=1)
     return image
 
-# Function to calculate image metrics
-def calculate_metrics(image):
-    metrics = {}
-    metrics['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    noise_estimation = np.std(image)
-    metrics['blurriness'] = laplacian_var
-    metrics['noise_level'] = noise_estimation
-    return metrics
-
-# Function to check if image is colored
+# Function to check if the image is colored
 def is_colored(image):
-    if len(image.shape) == 2:
-        return False
-    elif len(image.shape) == 3:
-        b, g, r = cv2.split(image)
-        return not (np.array_equal(b, g) and np.array_equal(b, r))
-    else:
-        raise ValueError("Unsupported image format")
+    return len(image.shape) == 3
 
-# Function to extract text using Tesseract OCR
+# Function to save images and show
+def save_and_show(images, output_dir):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    filenames = []
+    for i, (desc, img) in enumerate(images):
+        filename = os.path.join(output_dir, f'{desc}.jpg')
+        cv2.imwrite(filename, img)
+        filenames.append(filename)
+        print(f"Saved: {filename}")
+    return filenames
+
+# Function to extract text with Tesseract
 def extract_text_with_tesseract(image, lang='eng'):
     try:
         config = "--psm 3"
         text = pytesseract.image_to_string(image, config=config, lang=lang)
+        print(f"Extracted text: {text}")
         return text.strip()
     except Exception as e:
         print(f"Error extracting text: {e}")
         return ""
 
-# Function to calculate image size in human-readable format
+# Function to calculate image metrics
+def calculate_metrics(image):
+    metrics_dict = {}
+    metrics_dict['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
+    
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    metrics_dict['blurriness'] = laplacian_var
+    
+    noise_estimation = np.std(image)
+    metrics_dict['noise_level'] = noise_estimation
+    
+    return metrics_dict
+
+# Function to get image size
 def get_image_size(file_path):
     size_in_bytes = os.path.getsize(file_path)
     size_in_kb = size_in_bytes / 1024
@@ -129,40 +147,28 @@ def get_image_size(file_path):
     else:
         return f"{size_in_kb:.2f} KB"
 
-# Function to calculate PSNR between two images
+# Function to save metrics to Excel
+def save_metrics_to_excel(metrics_list, excel_path):
+    df = pd.DataFrame(metrics_list)
+    df.to_excel(excel_path, index=False, engine='openpyxl')
+    print(f"Metrics saved as: {excel_path}")
+
+# Function to calculate PSNR
 def calculate_psnr(original, processed):
     mse = np.mean((original - processed) ** 2)
     if mse == 0:
         return float('inf')
     max_pixel = 255.0
-    psnr = 10 * np.log10((max_pixel ** 2) / mse)
+    psnr = 10 * np.log10(max_pixel / np.sqrt(mse))
     return psnr
 
-# Function to save metrics to an Excel file in a specific sequence
-def save_metrics_to_excel(metrics_list, excel_path):
-    df = pd.DataFrame(metrics_list, columns=[
-        'image_name', 
-        'pre_original_size', 
-        'pre_image_size', 
-        'pre_blurriness', 
-        'pre_noise_level', 
-        'post_processed_size', 
-        'post_image_size', 
-        'post_blurriness', 
-        'post_noise_level', 
-        'pre_psnr', 
-        'post_psnr'
-    ])
-    df.to_excel(excel_path, index=False, engine='openpyxl')
-    print(f"Metrics saved to: {excel_path}")
-
-# Main function to process images
+# Function to process images from a folder
 def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="eng"):
     valid_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
     image_paths = [os.path.join(input_folder, file) for file in os.listdir(input_folder) if file.lower().endswith(valid_extensions)]
     
     if not image_paths:
-        raise ValueError(f"No image file found in the folder: {input_folder}")
+        raise ValueError(f"No image files found in the folder: {input_folder}")
     
     post_output_dir = os.path.join(output_dir, "PostProcessed")
     os.makedirs(post_output_dir, exist_ok=True)
@@ -228,11 +234,11 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
     else:
         print("No image processed successfully.")
 
-# Define paths
-input_folder = r"C:\CitiDev\preprocessing\Input"
-output_dir = r"C:\CitiDev\preprocessing\Output"
-excel_path = r"C:\CitiDev\preprocessing\Xlsx\metrics.xlsx"
+# Example usage
+input_folder = r"C:\CitiDev\Passport_new"
+output_dir = r"C:\CitiDev\Passport_new\Processed"
+excel_path = r"C:\CitiDev\Passport_new\metrics.xlsx"
 ocr_lang = 'eng'
 
-# Process images
 process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang)
+
