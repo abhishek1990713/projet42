@@ -47,8 +47,6 @@ def Upload():
     return None
 
 
-if __name__ == '__main__':
-    app.run(debug=True)
 import cv2
 import numpy as np
 import os
@@ -56,88 +54,98 @@ import pytesseract
 import pandas as pd
 from sklearn import metrics
 
-# Tesseract command setup
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Set Tesseract command path
+pytesseract.pytesseract.tesseract_cmd = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
 
 # Function to adjust brightness and contrast
 def adjust_brightness_contrast(image, brightness=0, contrast=0):
-    image = np.int16(image)
-    image = image * (contrast / 127 + 1) - contrast + brightness
-    image = np.clip(image, 0, 255)
-    return np.uint8(image)
+    image = np.int16(image)  # Convert to int16 to avoid overflow during operations
+
+    # Check if the image is colored (3 channels)
+    if len(image.shape) == 3:
+        image = image * (contrast / 127 + 1) - contrast + brightness
+    else:
+        # If the image is grayscale (1 channel), apply contrast and brightness to a single channel
+        image = image * (contrast / 127 + 1) - contrast + brightness
+
+    image = np.clip(image, 0, 255)  # Ensure pixel values are within the valid range
+    return np.uint8(image)  # Convert back to uint8 for image saving
 
 # Function to denoise image
 def denoise_image(image):
-    if len(image.shape) == 3:
-        return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
-    else:
-        return cv2.fastNlMeansDenoising(image, None, 10, 7, 21)
+    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
 
 # Function to blur image
 def blur_image(image):
-    return cv2.GaussianBlur(image, (5, 5), 0)
+    return cv2.GaussianBlur(image, (5,5), 0)
 
 # Function to apply thresholding
 def apply_threshold(image):
-    # Ensure image is grayscale before thresholding
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image  # If it's already grayscale, no need to convert
-
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
     _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    return thresh
+    return cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
 
-# Function to apply morphological operations
+# Function to apply morphological operation
 def morphological_operations(image):
     kernel = np.ones((3, 3), np.uint8)
     image = cv2.dilate(image, kernel, iterations=1)
     image = cv2.erode(image, kernel, iterations=1)
     return image
 
+# Function to resize the image
+def resize_image(image, width, height):
+    return cv2.resize(image, (width, height))
+
 # Function to check if the image is colored
 def is_colored(image):
-    return len(image.shape) == 3
+    if len(image.shape) == 2:
+        return False
+    elif len(image.shape) == 3:
+        b, g, r = cv2.split(image)
+        return not (np.array_equal(b, g) and np.array_equal(b, r))
+    else:
+        raise ValueError("Unsupported image format")
 
-# Function to save images and show
+# Function to save processed images and return filenames
 def save_and_show(images, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     filenames = []
     for i, (desc, img) in enumerate(images):
         filename = os.path.join(output_dir, f'{desc}.jpg')
         cv2.imwrite(filename, img)
         filenames.append(filename)
         print(f"Saved: {filename}")
+
     return filenames
 
-# Function to extract text with Tesseract
+# Function to extract text with Tesseract OCR
 def extract_text_with_tesseract(image, lang='eng'):
     try:
         config = "--psm 3"
         text = pytesseract.image_to_string(image, config=config, lang=lang)
-        print(f"Extracted text: {text}")
+        print("Extracted text: ", text)
         return text.strip()
     except Exception as e:
-        print(f"Error extracting text: {e}")
+        print("Error extracting text:", e)
         return ""
 
 # Function to calculate image metrics
 def calculate_metrics(image):
-    metrics_dict = {}
-    metrics_dict['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
-    
+    metrics = {}
+    metrics['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    metrics_dict['blurriness'] = laplacian_var
-    
-    noise_estimation = np.std(image)
-    metrics_dict['noise_level'] = noise_estimation
-    
-    return metrics_dict
 
-# Function to get image size
+    metrics['blurriness'] = laplacian_var
+    noise_estimation = np.std(image)
+    metrics['noise_level'] = noise_estimation
+
+    return metrics
+
+# Function to get image size in KB or MB
 def get_image_size(file_path):
     size_in_bytes = os.path.getsize(file_path)
     size_in_kb = size_in_bytes / 1024
@@ -159,7 +167,7 @@ def calculate_psnr(original, processed):
     if mse == 0:
         return float('inf')
     max_pixel = 255.0
-    psnr = 10 * np.log10(max_pixel / np.sqrt(mse))
+    psnr = 10 * np.log10((max_pixel ** 2) / mse)
     return psnr
 
 # Function to process images from a folder
@@ -189,6 +197,7 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
             pre_metrics = calculate_metrics(image)
             pre_metrics['original_size'] = original_size
             
+            # Preprocessing (colored or grayscale)
             if is_colored(image):
                 print("Image is colored. Applying preprocessing...")
                 denoised = denoise_image(image)
@@ -233,12 +242,3 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
         print("Batch processing completed. Metrics saved to Excel.")
     else:
         print("No image processed successfully.")
-
-# Example usage
-input_folder = r"C:\CitiDev\Passport_new"
-output_dir = r"C:\CitiDev\Passport_new\Processed"
-excel_path = r"C:\CitiDev\Passport_new\metrics.xlsx"
-ocr_lang = 'eng'
-
-process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang)
-
