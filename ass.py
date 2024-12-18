@@ -50,16 +50,27 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 from lang import LanguageDetectionService  # Assuming this is a custom module
 
 # Step 1: Load FastText model for language detection
-pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"  # Path to FastText model
 model = fasttext.load_model(pretrained_lang_model)
 
-# Step 2: Language detection from input text
-text = "صباح الخير، الجو جميل اليوم والسماء صافية"  # Example Arabic text
+# Step 2: Read text from a .txt file
+file_path = r"input.txt"  # Path to the text file
+
+# Reading content of the .txt file
+try:
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read().strip()
+    print(f"Text from file: {text[:100]}...")  # Print first 100 characters of the text for preview
+except Exception as e:
+    print(f"Error reading file: {e}")
+    exit(1)
+
+# Step 3: Language detection
 lang_detector = LanguageDetectionService(text)
 detected_language = lang_detector.main()  # Detected language code (e.g., 'ar' for Arabic)
 print("Detected Language:", detected_language)
 
-# Step 3: Supported language codes and their names
+# Step 4: List of supported language codes and their names
 language_codes = {
     'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 'it': 'Italian', 'ar': 'Arabic',
     'pt': 'Portuguese', 'zh': 'Chinese', 'ja': 'Japanese', 'ru': 'Russian', 'hi': 'Hindi',
@@ -73,7 +84,7 @@ print("\nAvailable languages:")
 for code, language in language_codes.items():
     print(f"{code}: {language}")
 
-# Step 4: User input for target language code
+# Step 5: User input for target language code
 target_language = input("\nEnter target language code (e.g., 'es' for Spanish): ").strip()
 
 # Validate input language code
@@ -81,14 +92,14 @@ if target_language not in language_codes:
     print("Invalid language code. Please choose from the available options.")
     exit(1)
 
-# Step 5: Load translation model and tokenizer
+# Step 6: Load translation model and tokenizer
 checkpoint = r"C:\CitiDev\language_prediction\m2m"
 model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Step 6: Setup translation pipeline
+# Step 7: Setup translation pipeline
 translation_pipeline = pipeline('translation', model=model, tokenizer=tokenizer, max_length=400)
 
-# Step 7: Translate the text based on detected source language and user-provided target language
+# Step 8: Translate the text based on detected source language and user-provided target language
 output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_language)
 print("\nTranslated Text:", output[0]['translation_text'])
