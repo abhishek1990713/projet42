@@ -47,33 +47,48 @@ def Upload():
     return None
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-from lang import LanguageDetectionService  # Assuming this is a custom module with the defined class
+from lang import LanguageDetectionService  # Assuming this is a custom module
 
-# Step 1: Load the FastText model for language identification
-pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"  # path to the FastText model
+# Step 1: Load FastText model for language detection
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
 model = fasttext.load_model(pretrained_lang_model)
 
-# Step 2: Language identification
-text = "صباح الخير، الجو جميل اليوم والسماء صافية"  # Example text in Arabic
-
-# Assuming LanguageDetectionService has a method `main()` that detects the language and returns it
+# Step 2: Language detection from input text
+text = "صباح الخير، الجو جميل اليوم والسماء صافية"  # Example Arabic text
 lang_detector = LanguageDetectionService(text)
 detected_language = lang_detector.main()  # Detected language code (e.g., 'ar' for Arabic)
 print("Detected Language:", detected_language)
 
-# Step 3: User input for target language
-# You can use any language code supported by the model (e.g., 'es' for Spanish, 'fr' for French)
-target_language = input("Enter the target language code (e.g., 'es' for Spanish): ")
+# Step 3: Supported language codes and their names
+language_codes = {
+    'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 'it': 'Italian', 'ar': 'Arabic',
+    'pt': 'Portuguese', 'zh': 'Chinese', 'ja': 'Japanese', 'ru': 'Russian', 'hi': 'Hindi',
+    'ko': 'Korean', 'nl': 'Dutch', 'tr': 'Turkish', 'pl': 'Polish', 'sv': 'Swedish', 'ro': 'Romanian',
+    'bn': 'Bengali', 'ta': 'Tamil', 'mr': 'Marathi', 'te': 'Telugu', 'th': 'Thai', 'id': 'Indonesian',
+    'vi': 'Vietnamese', 'cs': 'Czech', 'uk': 'Ukrainian', 'el': 'Greek', 'he': 'Hebrew', 'sr': 'Serbian'
+}
 
-# Step 4: Load the translation model and tokenizer
-checkpoint = r"C:\CitiDev\language_prediction\m2m"  # Path to M2M model or any other multilingual model
+# Display available languages and their codes
+print("\nAvailable languages:")
+for code, language in language_codes.items():
+    print(f"{code}: {language}")
+
+# Step 4: User input for target language code
+target_language = input("\nEnter target language code (e.g., 'es' for Spanish): ").strip()
+
+# Validate input language code
+if target_language not in language_codes:
+    print("Invalid language code. Please choose from the available options.")
+    exit(1)
+
+# Step 5: Load translation model and tokenizer
+checkpoint = r"C:\CitiDev\language_prediction\m2m"
 model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Step 5: Setup translation pipeline
-# Here we dynamically use the source language (detected_language) and target language (user input)
+# Step 6: Setup translation pipeline
 translation_pipeline = pipeline('translation', model=model, tokenizer=tokenizer, max_length=400)
 
-# Step 6: Translate the text
+# Step 7: Translate the text based on detected source language and user-provided target language
 output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_language)
-print("Translated Text:", output[0]['translation_text'])
+print("\nTranslated Text:", output[0]['translation_text'])
