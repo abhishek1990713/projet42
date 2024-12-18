@@ -45,7 +45,6 @@ def Upload():
 
     # return str(result)
     return None
-import fasttext
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 import torch
 
@@ -69,15 +68,6 @@ class LanguageCodes:
     @classmethod
     def get_lang_code(cls, language_name):
         return cls.LANG_CODES.get(language_name, None)
-
-# Load the language identification model
-def load_lang_model():
-    try:
-        model_path = hf_hub_download(repo_id="facebook/fasttext-language-identification", filename="model.bin")
-        lang_model = fasttext.load_model(model_path)
-        return lang_model
-    except Exception as e:
-        raise Exception(f"Error loading language model: {str(e)}")
 
 # Load the translation model and tokenizer
 def load_translation_model():
@@ -106,23 +96,19 @@ def translate_text(input_text, source_lang, target_lang, translation_model, toke
         raise Exception(f"Translation error: {str(e)}")
 
 # Main function to handle translation
-def translate_sentence(input_sentence, target_language):
+def translate_sentence(input_sentence, source_language, target_language):
     try:
         # Load models
-        lang_model = load_lang_model()
         translation_model, tokenizer = load_translation_model()
 
-        # Detect source language
-        lang_prediction = lang_model.predict(input_sentence)
-        source_lang = lang_prediction[0][0].replace("__label__", "")
-
-        # Get target language code
+        # Get source and target language codes
+        source_lang_code = LanguageCodes.get_lang_code(source_language)
         target_lang_code = LanguageCodes.get_lang_code(target_language)
-        if not target_lang_code:
-            raise ValueError(f"Unsupported target language: {target_language}")
+        if not source_lang_code or not target_lang_code:
+            raise ValueError(f"Unsupported language(s): {source_language}, {target_language}")
 
         # Translate the sentence
-        translated_text = translate_text(input_sentence, source_lang, target_lang_code, translation_model, tokenizer)
+        translated_text = translate_text(input_sentence, source_lang_code, target_lang_code, translation_model, tokenizer)
 
         # Print the translated text
         print(f"Original: {input_sentence}")
@@ -134,5 +120,6 @@ def translate_sentence(input_sentence, target_language):
 # Example usage
 if __name__ == "__main__":
     input_sentence = "Hello, how are you today?"  # Small sentence in English
+    source_language = "English"  # Source language is English
     target_language = "Japanese"  # Target language is Japanese
-    translate_sentence(input_sentence, target_language)
+    translate_sentence(input_sentence, source_language, target_language)
