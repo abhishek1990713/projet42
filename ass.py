@@ -47,27 +47,67 @@ def Upload():
     return None
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+import logging
 
-# Step 1: Load the FastText model for language identification
-pretrained_lang_model = "/content/lid218e.bin"  # path to the pretrained language model file
-model = fasttext.load_model(pretrained_lang_model)
+# Initialize logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Step 2: Language identification
-text = "صباح الخير، الجو جميل اليوم والسماء صافية."  # example text
-predictions = model.predict(text, k=1)
-input_lang = predictions[0][0].replace('__label__', '')  # Extract detected language
+# Load pre-trained FastText model for language detection
+model_path = "/content/lid218e.bin"  # path to your FastText model
+lang_model = fasttext.load_model(model_path)
 
-# Step 3: Load the translation model and tokenizer
-checkpoint = "Helsinki-NLP/opus-mt-ar-es"  # Example checkpoint for Arabic to Spanish
-model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
-tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+# LanguageDetectionService class
+class LanguageDetectionService:
+    def __init__(self, text: str):
+        self.text = text
 
-# Step 4: Setup translation pipeline
-translation_pipeline = pipeline('translation_ar_to_es',  # You can adjust the pipeline name based on your source and target languages
-                                model=model, 
-                                tokenizer=tokenizer, 
-                                max_length=400)
+    def detect_language(self):
+        try:
+            lang_prediction = lang_model.predict(self.text)
+            lang_code = lang_prediction[0][0].replace("__label__", "")
+            logger.info(f"Detected language: {lang_code}")
+            return lang_code
+        except Exception as e:
+            logger.error(f"Language detection failed: {str(e)}")
+            raise
 
-# Step 5: Translate the text
-output = translation_pipeline(text)
-print("Translated Text:", output[0]['translation_text'])
+# Translation function using HuggingFace transformers
+def translate_text(text, source_lang, target_lang):
+    try:
+        # Load translation model and tokenizer
+        checkpoint = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
+        model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+        
+        # Setup translation pipeline
+        translation_pipeline = pipeline('translation', model=model, tokenizer=tokenizer, max_length=400)
+        
+        # Translate the text
+        output = translation_pipeline(text)
+        translated_text = output[0]['translation_text']
+        logger.info(f"Translated text: {translated_text}")
+        return translated_text
+    except Exception as e:
+        logger.error(f"Translation failed: {str(e)}")
+        raise
+
+# Main function to detect language and translate
+def main(text, target_lang):
+    # Step 1: Detect the language
+    lang_detection_service = LanguageDetectionService(text)
+    source_lang = lang_detection_service.detect_language()
+
+    # Step 2: Translate the text
+    translated_text = translate_text(text, source_lang, target_lang)
+    
+    return translated_text
+
+# Example usage
+text = "صباح الخير، الجو جميل اليوم والسماء صافية."  # Input text
+target_lang = 'es'  # Target language (Spanish)
+
+# Translate the text
+result = main(text, target_lang)
+print(f"Original Text: {text}")
+print(f"Translated Text: {result}")
