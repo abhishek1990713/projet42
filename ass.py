@@ -45,81 +45,29 @@ def Upload():
 
     # return str(result)
     return None
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
-import torch
+import fasttext
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
-# Device setup
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Step 1: Load the FastText model for language identification
+pretrained_lang_model = "/content/lid218e.bin"  # path to the pretrained language model file
+model = fasttext.load_model(pretrained_lang_model)
 
-# Class for Language Codes
-class LanguageCodes:
-    LANG_CODES = {
-        "English": "eng_Latn",
-        "Japanese": "jpn_Jpan",
-        # Add more languages here as needed
-        "Hindi": "hin_Deva",
-        "Spanish": "spa_Latn",
-        "French": "fra_Latn",
-        "Chinese_Simplified": "zho_Hans",
-        "Chinese_Traditional": "zho_Hant",
-        "German": "deu_Latn",
-    }
+# Step 2: Language identification
+text = "صباح الخير، الجو جميل اليوم والسماء صافية."  # example text
+predictions = model.predict(text, k=1)
+input_lang = predictions[0][0].replace('__label__', '')  # Extract detected language
 
-    @classmethod
-    def get_lang_code(cls, language_name):
-        return cls.LANG_CODES.get(language_name, None)
+# Step 3: Load the translation model and tokenizer
+checkpoint = "Helsinki-NLP/opus-mt-ar-es"  # Example checkpoint for Arabic to Spanish
+model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Load the translation model and tokenizer
-def load_translation_model():
-    try:
-        tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-1.3B")
-        translation_model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-1.3B").to(device)
-        return translation_model, tokenizer
-    except Exception as e:
-        raise Exception(f"Error loading translation model: {str(e)}")
+# Step 4: Setup translation pipeline
+translation_pipeline = pipeline('translation_ar_to_es',  # You can adjust the pipeline name based on your source and target languages
+                                model=model, 
+                                tokenizer=tokenizer, 
+                                max_length=400)
 
-# Translation function
-def translate_text(input_text, source_lang, target_lang, translation_model, tokenizer):
-    try:
-        # Use HuggingFace pipeline for translation
-        translator = pipeline(
-            "translation",
-            model=translation_model,
-            tokenizer=tokenizer,
-            src_lang=source_lang,
-            tgt_lang=target_lang,
-            max_length=6000,
-        )
-        translated_text = translator(input_text)[0]['translation_text']
-        return translated_text
-    except Exception as e:
-        raise Exception(f"Translation error: {str(e)}")
-
-# Main function to handle translation
-def translate_sentence(input_sentence, source_language, target_language):
-    try:
-        # Load models
-        translation_model, tokenizer = load_translation_model()
-
-        # Get source and target language codes
-        source_lang_code = LanguageCodes.get_lang_code(source_language)
-        target_lang_code = LanguageCodes.get_lang_code(target_language)
-        if not source_lang_code or not target_lang_code:
-            raise ValueError(f"Unsupported language(s): {source_language}, {target_language}")
-
-        # Translate the sentence
-        translated_text = translate_text(input_sentence, source_lang_code, target_lang_code, translation_model, tokenizer)
-
-        # Print the translated text
-        print(f"Original: {input_sentence}")
-        print(f"Translated: {translated_text}")
-    
-    except Exception as e:
-        print(f"Error: {str(e)}")
-
-# Example usage
-if __name__ == "__main__":
-    input_sentence = "Hello, how are you today?"  # Small sentence in English
-    source_language = "English"  # Source language is English
-    target_language = "Japanese"  # Target language is Japanese
-    translate_sentence(input_sentence, source_language, target_language)
+# Step 5: Translate the text
+output = translation_pipeline(text)
+print("Translated Text:", output[0]['translation_text'])
