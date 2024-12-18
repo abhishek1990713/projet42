@@ -45,11 +45,13 @@ def Upload():
 
     # return str(result)
     return None
+import fasttext
+import re
 import logging
 from enum import Enum
 from huggingface_hub import hf_hub_download
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline, BitsAndBytesConfig
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +64,12 @@ logger.setLevel(logging.DEBUG)
 
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# FastText language detection model
+model_path = hf_hub_download(
+    repo_id="facebook/fasttext-language-identification", filename="model.bin"
+)
+lang_model = fasttext.load_model(model_path)
 
 # Translation model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-1.3B")
@@ -100,12 +108,17 @@ class TranslationService:
 
             target_lang_code = LanguageCodes[self.target_lang].value
 
+            # Detect source language
+            src_lang_prediction = lang_model.predict(self.text)
+            src_lang_code = src_lang_prediction[0][0].replace("__label__", "")
+            logger.info(f"Detected source language: {src_lang_code}")
+
             # Prepare the translation pipeline
             translator = pipeline(
                 "translation",
                 model=model,
                 tokenizer=tokenizer,
-                src_lang="en_Latn",  # Assuming source language is English
+                src_lang=src_lang_code,
                 tgt_lang=target_lang_code,
                 max_length=6000,
             )
