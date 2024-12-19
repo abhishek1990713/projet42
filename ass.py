@@ -91,17 +91,25 @@ for filename in os.listdir(input_folder):
             with open(file_path, 'r', encoding='utf-8') as file:
                 text = file.read().strip()
 
+            if not text:
+                print(f"Skipping {filename}: File is empty.")
+                continue
+
+            # Debug: Print the original text
+            print(f"Processing {filename}: Original Text = {text}")
+
             # Step 5: Language detection
             lang_prediction = lang_model.predict(text)
             detected_language = lang_prediction[0][0].replace("__label__", "")
             confidence_score_lang = lang_prediction[1][0]
 
+            # Debug: Print detected language
+            print(f"Detected Language: {detected_language} (Confidence: {confidence_score_lang})")
+
             # Skip files if the detected language is not supported
             if detected_language not in target_languages:
                 print(f"Skipping {filename}: Unsupported language detected ({detected_language})")
                 continue
-
-            print(f"Processing {filename}: Detected Language = {detected_language}")
 
             # Translate the text into all target languages
             translations = {}
@@ -114,6 +122,9 @@ for filename in os.listdir(input_folder):
                 # Calculate translation confidence score
                 score = calculate_translation_score(translation_model, tokenizer, text, translation_text)
                 translation_scores[target_lang] = score
+
+                # Debug: Print translations and confidence scores
+                print(f"Translation to {target_lang}: {translation_text} (Confidence: {score})")
             
             # Save results
             results.append({
@@ -136,7 +147,9 @@ for filename in os.listdir(input_folder):
             print(f"Error processing {filename}: {e}")
 
 # Step 6: Save results to an Excel file
-df = pd.DataFrame(results)
-df.to_excel(output_excel, index=False)  # Removed `encoding` argument
-
-print(f"Translation completed. Results saved to {output_excel}")
+if results:
+    df = pd.DataFrame(results)
+    df.to_excel(output_excel, index=False)  # Removed `encoding` argument
+    print(f"Translation completed. Results saved to {output_excel}")
+else:
+    print("No results to save. Ensure the input folder contains valid .txt files with supported languages.")
