@@ -73,7 +73,7 @@ results = []
 target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
 
 # Perplexity scoring function
-def calculate_translation_score(model, tokenizer, text, translation, target_lang):
+def calculate_translation_score(model, tokenizer, text, translation):
     inputs = tokenizer(translation, return_tensors="pt").to(model.device)
     with torch.no_grad():
         outputs = model(**inputs, labels=inputs["input_ids"])
@@ -112,7 +112,7 @@ for filename in os.listdir(input_folder):
                 translations[target_lang] = translation_text
 
                 # Calculate translation confidence score
-                score = calculate_translation_score(translation_model, tokenizer, text, translation_text, target_lang)
+                score = calculate_translation_score(translation_model, tokenizer, text, translation_text)
                 translation_scores[target_lang] = score
             
             # Save results
@@ -137,6 +137,6 @@ for filename in os.listdir(input_folder):
 
 # Step 6: Save results to an Excel file
 df = pd.DataFrame(results)
-df.to_excel(output_excel, index=False, encoding='utf-8')
+df.to_excel(output_excel, index=False)  # Removed `encoding` argument
 
 print(f"Translation completed. Results saved to {output_excel}")
