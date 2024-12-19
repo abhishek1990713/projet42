@@ -45,61 +45,77 @@ def Upload():
 
     # return str(result)
     return None
+import os
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-from lang import LanguageDetectionService  # Assuming this is a custom module
+import pandas as pd
 
 # Step 1: Load FastText model for language detection
-pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"  # Path to FastText model
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
 model = fasttext.load_model(pretrained_lang_model)
 
-# Step 2: Read text from a .txt file
-file_path = r"input.txt"  # Path to the text file
-
-# Reading content of the .txt file
-try:
-    with open(file_path, 'r', encoding='utf-8') as file:
-        text = file.read().strip()
-    print(f"Text from file: {text[:100]}...")  # Print first 100 characters of the text for preview
-except Exception as e:
-    print(f"Error reading file: {e}")
-    exit(1)
-
-# Step 3: Language detection
-lang_detector = LanguageDetectionService(text)
-detected_language = lang_detector.main()  # Detected language code (e.g., 'ar' for Arabic)
-print("Detected Language:", detected_language)
-
-# Step 4: List of supported language codes and their names
-language_codes = {
-    'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 'it': 'Italian', 'ar': 'Arabic',
-    'pt': 'Portuguese', 'zh': 'Chinese', 'ja': 'Japanese', 'ru': 'Russian', 'hi': 'Hindi',
-    'ko': 'Korean', 'nl': 'Dutch', 'tr': 'Turkish', 'pl': 'Polish', 'sv': 'Swedish', 'ro': 'Romanian',
-    'bn': 'Bengali', 'ta': 'Tamil', 'mr': 'Marathi', 'te': 'Telugu', 'th': 'Thai', 'id': 'Indonesian',
-    'vi': 'Vietnamese', 'cs': 'Czech', 'uk': 'Ukrainian', 'el': 'Greek', 'he': 'Hebrew', 'sr': 'Serbian'
-}
-
-# Display available languages and their codes
-print("\nAvailable languages:")
-for code, language in language_codes.items():
-    print(f"{code}: {language}")
-
-# Step 5: User input for target language code
-target_language = input("\nEnter target language code (e.g., 'es' for Spanish): ").strip()
-
-# Validate input language code
-if target_language not in language_codes:
-    print("Invalid language code. Please choose from the available options.")
-    exit(1)
-
-# Step 6: Load translation model and tokenizer
+# Step 2: Load translation model and tokenizer
 checkpoint = r"C:\CitiDev\language_prediction\m2m"
-model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
+translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Step 7: Setup translation pipeline
-translation_pipeline = pipeline('translation', model=model, tokenizer=tokenizer, max_length=400)
+translation_pipeline = pipeline('translation', model=translation_model, tokenizer=tokenizer, max_length=400)
 
-# Step 8: Translate the text based on detected source language and user-provided target language
-output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_language)
-print("\nTranslated Text:", output[0]['translation_text'])
+# Step 3: Define folder and output Excel file paths
+input_folder = r"C:\path\to\your\folder"  # Folder containing .txt files
+output_excel = r"C:\path\to\output.xlsx"
+
+# Step 4: Initialize result list
+results = []
+
+# Supported target languages
+target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
+
+# Process each file in the folder
+for filename in os.listdir(input_folder):
+    if filename.endswith(".txt"):
+        file_path = os.path.join(input_folder, filename)
+        
+        try:
+            # Read the text file
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read().strip()
+
+            # Step 5: Language detection
+            lang_prediction = model.predict(text)
+            detected_language = lang_prediction[0][0].replace("__label__", "")
+            confidence_score = lang_prediction[1][0]
+
+            # Skip files if the detected language is not supported
+            if detected_language not in target_languages:
+                print(f"Skipping {filename}: Unsupported language detected ({detected_language})")
+                continue
+
+            print(f"Processing {filename}: Detected Language = {detected_language}, Confidence = {confidence_score}")
+
+            # Translate the text into all target languages
+            translations = {}
+            for target_lang in target_languages:
+                output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_lang)
+                translations[target_lang] = output[0]['translation_text']
+            
+            # Save results
+            results.append({
+                'File Name': filename,
+                'Original Text': text,
+                'Detected Language Code': detected_language,
+                'Confidence Score': confidence_score,
+                'Translation (es)': translations.get('es', ''),
+                'Translation (fr)': translations.get('fr', ''),
+                'Translation (ru)': translations.get('ru', ''),
+                'Translation (ja)': translations.get('ja', ''),
+                'Translation (hi)': translations.get('hi', '')
+            })
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
+
+# Step 6: Save results to an Excel file
+df = pd.DataFrame(results)
+df.to_excel(output_excel, index=False, encoding='utf-8')
+
+print(f"Translation completed. Results saved to {output_excel}")
