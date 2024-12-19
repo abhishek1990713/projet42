@@ -49,10 +49,11 @@ import os
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 import pandas as pd
+import torch
 
 # Step 1: Load FastText model for language detection
 pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
-model = fasttext.load_model(pretrained_lang_model)
+lang_model = fasttext.load_model(pretrained_lang_model)
 
 # Step 2: Load translation model and tokenizer
 checkpoint = r"C:\CitiDev\language_prediction\m2m"
@@ -71,6 +72,15 @@ results = []
 # Supported target languages
 target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
 
+# Perplexity scoring function
+def calculate_translation_score(model, tokenizer, text, translation, target_lang):
+    inputs = tokenizer(translation, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        outputs = model(**inputs, labels=inputs["input_ids"])
+    loss = outputs.loss.item()
+    perplexity = torch.exp(torch.tensor(loss)).item()
+    return round(1 / perplexity, 2)  # Higher is better
+
 # Process each file in the folder
 for filename in os.listdir(input_folder):
     if filename.endswith(".txt"):
@@ -82,34 +92,45 @@ for filename in os.listdir(input_folder):
                 text = file.read().strip()
 
             # Step 5: Language detection
-            lang_prediction = model.predict(text)
+            lang_prediction = lang_model.predict(text)
             detected_language = lang_prediction[0][0].replace("__label__", "")
-            confidence_score = lang_prediction[1][0]
+            confidence_score_lang = lang_prediction[1][0]
 
             # Skip files if the detected language is not supported
             if detected_language not in target_languages:
                 print(f"Skipping {filename}: Unsupported language detected ({detected_language})")
                 continue
 
-            print(f"Processing {filename}: Detected Language = {detected_language}, Confidence = {confidence_score}")
+            print(f"Processing {filename}: Detected Language = {detected_language}")
 
             # Translate the text into all target languages
             translations = {}
+            translation_scores = {}
             for target_lang in target_languages:
                 output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_lang)
-                translations[target_lang] = output[0]['translation_text']
+                translation_text = output[0]['translation_text']
+                translations[target_lang] = translation_text
+
+                # Calculate translation confidence score
+                score = calculate_translation_score(translation_model, tokenizer, text, translation_text, target_lang)
+                translation_scores[target_lang] = score
             
             # Save results
             results.append({
                 'File Name': filename,
                 'Original Text': text,
                 'Detected Language Code': detected_language,
-                'Confidence Score': confidence_score,
+                'Confidence Score (Detection)': confidence_score_lang,
                 'Translation (es)': translations.get('es', ''),
+                'Confidence (es)': translation_scores.get('es', ''),
                 'Translation (fr)': translations.get('fr', ''),
+                'Confidence (fr)': translation_scores.get('fr', ''),
                 'Translation (ru)': translations.get('ru', ''),
+                'Confidence (ru)': translation_scores.get('ru', ''),
                 'Translation (ja)': translations.get('ja', ''),
-                'Translation (hi)': translations.get('hi', '')
+                'Confidence (ja)': translation_scores.get('ja', ''),
+                'Translation (hi)': translations.get('hi', ''),
+                'Confidence (hi)': translation_scores.get('hi', '')
             })
         except Exception as e:
             print(f"Error processing {filename}: {e}")
