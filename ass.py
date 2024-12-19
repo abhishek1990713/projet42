@@ -49,7 +49,6 @@ import os
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 import pandas as pd
-import torch
 
 # Step 1: Load FastText model for language detection
 pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
@@ -71,15 +70,6 @@ results = []
 
 # Supported target languages
 target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
-
-# Perplexity scoring function
-def calculate_translation_score(model, tokenizer, text, translation):
-    inputs = tokenizer(translation, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        outputs = model(**inputs, labels=inputs["input_ids"])
-    loss = outputs.loss.item()
-    perplexity = torch.exp(torch.tensor(loss)).item()
-    return round(1 / perplexity, 2)  # Higher is better
 
 # Process each file in the folder
 for filename in os.listdir(input_folder):
@@ -113,18 +103,12 @@ for filename in os.listdir(input_folder):
 
             # Translate the text into all target languages
             translations = {}
-            translation_scores = {}
             for target_lang in target_languages:
                 output = translation_pipeline(text, src_lang=detected_language, tgt_lang=target_lang)
-                translation_text = output[0]['translation_text']
-                translations[target_lang] = translation_text
+                translations[target_lang] = output[0]['translation_text']
 
-                # Calculate translation confidence score
-                score = calculate_translation_score(translation_model, tokenizer, text, translation_text)
-                translation_scores[target_lang] = score
-
-                # Debug: Print translations and confidence scores
-                print(f"Translation to {target_lang}: {translation_text} (Confidence: {score})")
+                # Debug: Print translations
+                print(f"Translation to {target_lang}: {translations[target_lang]}")
             
             # Save results
             results.append({
@@ -133,15 +117,10 @@ for filename in os.listdir(input_folder):
                 'Detected Language Code': detected_language,
                 'Confidence Score (Detection)': confidence_score_lang,
                 'Translation (es)': translations.get('es', ''),
-                'Confidence (es)': translation_scores.get('es', ''),
                 'Translation (fr)': translations.get('fr', ''),
-                'Confidence (fr)': translation_scores.get('fr', ''),
                 'Translation (ru)': translations.get('ru', ''),
-                'Confidence (ru)': translation_scores.get('ru', ''),
                 'Translation (ja)': translations.get('ja', ''),
-                'Confidence (ja)': translation_scores.get('ja', ''),
-                'Translation (hi)': translations.get('hi', ''),
-                'Confidence (hi)': translation_scores.get('hi', '')
+                'Translation (hi)': translations.get('hi', '')
             })
         except Exception as e:
             print(f"Error processing {filename}: {e}")
