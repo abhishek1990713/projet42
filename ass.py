@@ -48,7 +48,6 @@ def Upload():
 import os
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-import pandas as pd
 
 # Step 1: Load FastText model for language detection
 pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
@@ -61,16 +60,12 @@ tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
 translation_pipeline = pipeline('translation', model=translation_model, tokenizer=tokenizer, max_length=400)
 
-# Step 3: Define input and output folders and output Excel file path
+# Step 3: Define input and output folders
 input_folder = r"C:\path\to\your\input_folder"  # Folder containing .txt files
 output_folder = r"C:\path\to\your\output_folder"  # Folder to save translated .txt files
-output_excel = r"C:\path\to\output.xlsx"
 
 # Ensure output folder exists
 os.makedirs(output_folder, exist_ok=True)
-
-# Step 4: Initialize result list
-results = []
 
 # Supported target languages
 target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
@@ -92,7 +87,7 @@ for filename in os.listdir(input_folder):
             # Debug: Print the original text
             print(f"Processing {filename}: Original Text = {text}")
 
-            # Step 5: Language detection
+            # Step 4: Language detection
             lang_prediction = lang_model.predict(text)
             detected_language = lang_prediction[0][0].replace("__label__", "")
             confidence_score_lang = lang_prediction[1][0]
@@ -115,28 +110,15 @@ for filename in os.listdir(input_folder):
                 print(f"Translation to {target_lang}: {translations[target_lang]}")
             
             # Save translations to a .txt file in the output folder
-            output_file_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_translated.txt")
+            output_file_path = os.path.join(output_folder, filename)  # Same filename as input
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(f"Original Text:\n{text}\n\n")
                 output_file.write(f"Detected Language: {detected_language} (Confidence: {confidence_score_lang})\n\n")
                 for lang, translation in translations.items():
                     output_file.write(f"Translation ({lang}):\n{translation}\n\n")
-
-            # Save results for Excel output
-            results.append({
-                'File Name': filename,
-                'Original Text': text,
-                'Detected Language Code': detected_language,
-                'Confidence Score (Detection)': confidence_score_lang,
-                **{f"Translation ({lang})": translations.get(lang, '') for lang in target_languages}
-            })
+                
+            print(f"Saved translations to {output_file_path}")
         except Exception as e:
             print(f"Error processing {filename}: {e}")
 
-# Step 6: Save results to an Excel file
-if results:
-    df = pd.DataFrame(results)
-    df.to_excel(output_excel, index=False)  # Removed `encoding` argument
-    print(f"Translation completed. Results saved to {output_excel}")
-else:
-    print("No results to save. Ensure the input folder contains valid .txt files with supported languages.")
+print("Translation completed for all files.")
