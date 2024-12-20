@@ -95,9 +95,9 @@ for filename in os.listdir(input_folder):
             # Debug: Print detected language
             print(f"Detected Language: {detected_language} (Confidence: {confidence_score_lang})")
 
-            # Skip files if the detected language is not supported
-            if detected_language not in target_languages:
-                print(f"Skipping {filename}: Unsupported language detected ({detected_language})")
+            # Skip files if the detected language is empty or unsupported
+            if not detected_language:
+                print(f"Skipping {filename}: Language detection failed.")
                 continue
 
             # Translate the text into all target languages
