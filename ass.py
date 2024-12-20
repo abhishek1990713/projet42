@@ -61,9 +61,13 @@ tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
 translation_pipeline = pipeline('translation', model=translation_model, tokenizer=tokenizer, max_length=400)
 
-# Step 3: Define folder and output Excel file paths
-input_folder = r"C:\path\to\your\folder"  # Folder containing .txt files
+# Step 3: Define input and output folders and output Excel file path
+input_folder = r"C:\path\to\your\input_folder"  # Folder containing .txt files
+output_folder = r"C:\path\to\your\output_folder"  # Folder to save translated .txt files
 output_excel = r"C:\path\to\output.xlsx"
+
+# Ensure output folder exists
+os.makedirs(output_folder, exist_ok=True)
 
 # Step 4: Initialize result list
 results = []
@@ -110,17 +114,21 @@ for filename in os.listdir(input_folder):
                 # Debug: Print translations
                 print(f"Translation to {target_lang}: {translations[target_lang]}")
             
-            # Save results
+            # Save translations to a .txt file in the output folder
+            output_file_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_translated.txt")
+            with open(output_file_path, 'w', encoding='utf-8') as output_file:
+                output_file.write(f"Original Text:\n{text}\n\n")
+                output_file.write(f"Detected Language: {detected_language} (Confidence: {confidence_score_lang})\n\n")
+                for lang, translation in translations.items():
+                    output_file.write(f"Translation ({lang}):\n{translation}\n\n")
+
+            # Save results for Excel output
             results.append({
                 'File Name': filename,
                 'Original Text': text,
                 'Detected Language Code': detected_language,
                 'Confidence Score (Detection)': confidence_score_lang,
-                'Translation (es)': translations.get('es', ''),
-                'Translation (fr)': translations.get('fr', ''),
-                'Translation (ru)': translations.get('ru', ''),
-                'Translation (ja)': translations.get('ja', ''),
-                'Translation (hi)': translations.get('hi', '')
+                **{f"Translation ({lang})": translations.get(lang, '') for lang in target_languages}
             })
         except Exception as e:
             print(f"Error processing {filename}: {e}")
