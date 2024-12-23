@@ -12,39 +12,7 @@ app = Flask(__name__)
 
 CORS(app)
 
-
-@app.route('/', methods=['GET'])
-def index():
-    # Main page
-    return render_template('index4.html')
-
-
-@app.route('/predict', methods=['GET'])
-def Upload():
-    if request.method == 'GET':
-        # print(request.json['file'])
-
-
-        r = sr.Recognizer()
-
-        sound = AudioSegment.from_wav("inp/splite.wav")
-
-        audio_chunks = split_on_silence(sound, min_silence_len=1000, silence_thresh=sound.dBFS - 14, keep_silence=500)
-        whole_text = ""
-        textMap = {}
-        for i, chunk in enumerate(audio_chunks):
-            output_file = os.path.join('InputFiles', f"speech_chunk{i}.wav")
-            print("Exporting file", output_file)
-            result = chunk.export(output_file, format="wav")
-
-
-
-
-        # os.remove("inp/splite.wav")
-        return str(result)
-
-    # return str(result)
-    return Noneimport os
+import os
 import cv2
 import numpy as np
 import pytesseract
@@ -55,8 +23,7 @@ def get_image_size(image_path):
     return os.path.getsize(image_path)
 
 def get_image_dpi(image_path):
-    # Default DPI if not available
-    return 300
+    return 300  # Default DPI
 
 def calculate_metrics(image):
     metrics = {}
@@ -68,6 +35,9 @@ def calculate_metrics(image):
 
 def extract_text_with_tesseract(image, lang="eng"):
     return pytesseract.image_to_string(image, lang=lang)
+
+def count_words(text):
+    return len(text.split())
 
 def is_colored(image):
     return len(image.shape) == 3 and image.shape[2] == 3
@@ -100,9 +70,6 @@ def calculate_psnr(original, processed):
     max_pixel = 255.0
     return 20 * np.log10(max_pixel / np.sqrt(mse))
 
-def calculate_ocr_performance(pre_text, post_text):
-    return len(pre_text), len(post_text)
-
 def save_metrics_to_excel(metric_list, excel_path):
     wb = Workbook()
     ws = wb.active
@@ -111,8 +78,10 @@ def save_metrics_to_excel(metric_list, excel_path):
     headers = [
         "Image Name", "Pre Original Size", "Pre Image Size", "Pre Blurriness",
         "Pre Noise Level", "Post Processed Size", "Post Image Size",
-        "Post Blurriness", "Post Noise Level", "PSNR", "Pre OCR Text",
-        "Post OCR Text", "Pre DPI", "Post DPI"
+        "Post Blurriness", "Post Noise Level", "PSNR", 
+        "Pre OCR Text", "Post OCR Text", 
+        "Number of Words Pre", "Number of Words Post", 
+        "Pre DPI", "Post DPI"
     ]
     ws.append(headers)
 
@@ -122,8 +91,9 @@ def save_metrics_to_excel(metric_list, excel_path):
             metrics['pre_blurriness'], metrics['pre_noise_level'],
             metrics['post_processed_size'], metrics['post_image_size'],
             metrics['post_blurriness'], metrics['post_noise_level'],
-            metrics['post_psnr'], metrics['pre_ocr_text'],
-            metrics['post_ocr_text'], metrics['pre_dpi'], metrics['post_dpi']
+            metrics['post_psnr'], metrics['pre_ocr_text'], metrics['post_ocr_text'],
+            metrics['num_words_pre'], metrics['num_words_post'],
+            metrics['pre_dpi'], metrics['post_dpi']
         ]
         ws.append(row)
 
@@ -160,6 +130,7 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
             pre_metrics['original_dpi'] = original_dpi
 
             original_ocr_text = extract_text_with_tesseract(image, lang=ocr_lang)
+            num_words_pre = count_words(original_ocr_text)
             print("\n--- OCR Result Before Processing ---")
             print(original_ocr_text)
 
@@ -190,14 +161,13 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
 
             processed_image = cv2.imread(processed_image_path)
             processed_ocr_text = extract_text_with_tesseract(processed_image, lang=ocr_lang)
+            num_words_post = count_words(processed_ocr_text)
             print("\n--- OCR Result After Processing ---")
             print(processed_ocr_text)
 
             processed_ocr_text_path = os.path.join(post_output_dir, f"{os.path.splitext(image_name)[0]}_processed_ocr.txt")
             with open(processed_ocr_text_path, 'w', encoding="utf-8") as f:
                 f.write(processed_ocr_text)
-
-            ocr_performance = calculate_ocr_performance(original_ocr_text, processed_ocr_text)
 
             post_metrics = calculate_metrics(processed_image)
             post_metrics['image_name'] = image_name
@@ -217,6 +187,8 @@ def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="en
                 'post_psnr': post_metrics['psnr'],
                 'pre_ocr_text': original_ocr_text,
                 'post_ocr_text': processed_ocr_text,
+                'num_words_pre': num_words_pre,
+                'num_words_post': num_words_post,
                 'pre_dpi': pre_metrics['original_dpi'],
                 'post_dpi': processed_dpi
             })
