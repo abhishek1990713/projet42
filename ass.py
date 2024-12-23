@@ -25,14 +25,14 @@ checkpoint = r"C:\CitiDev\language_prediction\m2m"
 translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
+# Translation pipeline
 translation_pipeline = pipeline('translation', model=translation_model, tokenizer=tokenizer, max_length=400)
 
-# Step 3: Define input and output folders
+# Define input and output folders
 input_folder = r"C:\path\to\your\input_folder"  # Folder containing .txt files
 output_folder = r"C:\path\to\your\output_folder"  # Folder to save translated .txt files
 
-# Ensure output folder exists
-os.makedirs(output_folder, exist_ok=True)
+os.makedirs(output_folder, exist_ok=True)  # Ensure output folder exists
 
 # Supported target languages
 target_languages = ['es', 'fr', 'ru', 'ja', 'hi']
@@ -51,35 +51,39 @@ for filename in os.listdir(input_folder):
                 print(f"Skipping {filename}: File is empty.")
                 continue
 
-            # Debug: Print the original text
             print(f"Processing {filename}: Original Text = {text}")
 
-            # Step 4: Detect multiple languages and their probabilities
-            lang_predictions = lang_model.predict(text, k=5)  # Top 5 languages
+            # Detect multiple languages and their probabilities
+            lang_predictions = lang_model.predict(text, k=5)
             detected_languages = lang_predictions[0]
             confidence_scores = lang_predictions[1]
 
-            # Calculate percentage-wise contribution
+            # Calculate percentage-wise contributions
             total_confidence = sum(confidence_scores)
             language_contributions = {
                 lang.replace("__label__", ""): round((conf / total_confidence) * 100, 2)
                 for lang, conf in zip(detected_languages, confidence_scores)
             }
 
-            # Debug: Print detected languages and their contributions
             print(f"Detected Languages and Contributions: {language_contributions}")
 
-            # Translate the text into all target languages
+            # Use the language with the highest confidence as the source language
+            src_lang = max(language_contributions, key=language_contributions.get)
+
+            # Translate into all target languages
             translations = {}
             for target_lang in target_languages:
-                output = translation_pipeline(text, tgt_lang=target_lang)
-                translations[target_lang] = output[0]['translation_text']
+                if src_lang == target_lang:
+                    continue  # Skip translation if source and target languages are the same
+                try:
+                    output = translation_pipeline(text, src_lang=src_lang, tgt_lang=target_lang)
+                    translations[target_lang] = output[0]['translation_text']
+                    print(f"Translation to {target_lang}: {translations[target_lang]}")
+                except Exception as e:
+                    print(f"Error translating to {target_lang}: {e}")
 
-                # Debug: Print translations
-                print(f"Translation to {target_lang}: {translations[target_lang]}")
-            
             # Save results to a .txt file in the output folder
-            output_file_path = os.path.join(output_folder, filename)  # Same filename as input
+            output_file_path = os.path.join(output_folder, filename)
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(f"Original Text:\n{text}\n\n")
                 output_file.write("Detected Languages (Percentage Contribution):\n")
@@ -88,8 +92,9 @@ for filename in os.listdir(input_folder):
                 output_file.write("\n")
                 for lang, translation in translations.items():
                     output_file.write(f"Translation ({lang}):\n{translation}\n\n")
-                
+
             print(f"Saved translations to {output_file_path}")
+
         except Exception as e:
             print(f"Error processing {filename}: {e}")
 
