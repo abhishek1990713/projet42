@@ -36,6 +36,9 @@ input_folder = r"C:\CitiDev\language_prediction\input1"
 # Target language for translation (e.g., 'fr' for French)
 target_language = 'fr'
 
+# Source language (replace with the source language code of your input text)
+source_language = 'en'
+
 # Process each file in the input folder
 for filename in os.listdir(input_folder):
     if filename.endswith(".txt"):
@@ -51,8 +54,12 @@ for filename in os.listdir(input_folder):
 
             print(f"\nProcessing {filename}: Original Text = {text}")
 
-            # Translate the entire text into the target language
-            output = translation_pipeline(text, tgt_lang=target_language)
+            # Translate the entire text
+            output = translation_pipeline(
+                text, 
+                src_lang=source_language, 
+                tgt_lang=target_language
+            )
             translated_text = output[0]['translation_text']
 
             print(f"Translated Text ({target_language}): {translated_text}")
