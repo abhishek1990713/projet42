@@ -13,16 +13,19 @@ app = Flask(__name__)
 CORS(app)
 
 import os
+import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+
+# Load language detection model (fastText)
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+lang_model = fasttext.load_model(pretrained_lang_model)
 
 # Translation model checkpoint
 checkpoint = r"C:\CitiDev\language_prediction\m2m"
-
-# Load translation model and tokenizer
 translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Set up the translation pipeline
+# Translation pipeline
 translation_pipeline = pipeline(
     'translation', 
     model=translation_model, 
@@ -32,55 +35,57 @@ translation_pipeline = pipeline(
 
 # Input folder path
 input_folder = r"C:\CitiDev\language_prediction\input1"
+target_language = 'fr'  # Target language for translation
 
-# Target language for translation (e.g., 'fr' for French)
-target_language = 'fr'
-
-# Default source language (assume most of the text is in one language if unsure)
-default_source_language = 'en'
+# Function to detect the language of a text segment
+def detect_language(text):
+    prediction = lang_model.predict(text.strip().replace("\n", ""))
+    return prediction[0][0].replace("__label__", ""), prediction[1][0]
 
 # Process each file in the input folder
 for filename in os.listdir(input_folder):
     if filename.endswith(".txt"):
         file_path = os.path.join(input_folder, filename)
-        
+
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 text = file.read().strip()
-            
+
             if not text:
                 print(f"Skipping {filename}: File is empty.")
                 continue
 
             print(f"\nProcessing {filename}:")
-            
-            # Split the text into sentences or segments
-            segments = text.split("\n")  # Split by lines
+
+            # Split text into segments (e.g., by spaces)
+            segments = text.split(" ")
             translated_segments = []
 
             for segment in segments:
                 segment = segment.strip()
                 if not segment:
                     continue
-                
+
+                # Detect language of the segment
+                detected_language, confidence = detect_language(segment)
+
                 try:
-                    # Translate each segment
+                    # Translate segment
                     output = translation_pipeline(
                         segment, 
-                        src_lang=default_source_language, 
+                        src_lang=detected_language, 
                         tgt_lang=target_language
                     )
                     translated_text = output[0]['translation_text']
                     translated_segments.append(translated_text)
-
-                    print(f"Original: {segment}")
-                    print(f"Translated: {translated_text}\n")
                 except Exception as segment_error:
                     print(f"Error translating segment: {segment}. Error: {segment_error}")
+                    translated_segments.append(segment)  # Keep original if translation fails
 
             # Combine translated segments into the full translated text
-            full_translated_text = "\n".join(translated_segments)
-            print(f"\nFull Translated Text ({target_language}):\n{full_translated_text}\n")
-        
+            full_translated_text = " ".join(translated_segments)
+            print(f"Original: {text}")
+            print(f"Translated: {full_translated_text}\n")
+
         except Exception as e:
             print(f"Error processing {filename}: {e}")
