@@ -13,6 +13,7 @@ app = Flask(__name__)
 CORS(app)
 
 import os
+import os
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
 # Translation model checkpoint
@@ -33,11 +34,18 @@ translation_pipeline = pipeline(
 # Input folder path
 input_folder = r"C:\CitiDev\language_prediction\input1"
 
+# Specify source languages for each language in the text (manually set based on input content)
+source_languages = {
+    "en": "English",
+    "zh": "Chinese",
+    "vi": "Vietnamese",
+    "hi": "Hindi",
+    "es": "Spanish",
+    "ja": "Japanese"
+}
+
 # Target language for translation (e.g., 'fr' for French)
 target_language = 'fr'
-
-# Source language (replace with the source language code of your input text)
-source_language = 'en'
 
 # Process each file in the input folder
 for filename in os.listdir(input_folder):
@@ -46,23 +54,36 @@ for filename in os.listdir(input_folder):
         
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
-                text = file.read().strip()
+                text = file.readlines()
             
             if not text:
                 print(f"Skipping {filename}: File is empty.")
                 continue
 
-            print(f"\nProcessing {filename}: Original Text = {text}")
+            print(f"\nProcessing {filename}:")
+            
+            for line in text:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Identify the language for each line manually (default to 'en' if not listed)
+                for src_lang in source_languages:
+                    if line.startswith(source_languages[src_lang]):
+                        source_language = src_lang
+                        break
+                else:
+                    source_language = "en"  # Default to English if not matched
 
-            # Translate the entire text
-            output = translation_pipeline(
-                text, 
-                src_lang=source_language, 
-                tgt_lang=target_language
-            )
-            translated_text = output[0]['translation_text']
-
-            print(f"Translated Text ({target_language}): {translated_text}")
+                # Translate each line
+                output = translation_pipeline(
+                    line, 
+                    src_lang=source_language, 
+                    tgt_lang=target_language
+                )
+                translated_text = output[0]['translation_text']
+                print(f"Original ({source_language}): {line}")
+                print(f"Translated ({target_language}): {translated_text}\n")
         
         except Exception as e:
             print(f"Error processing {filename}: {e}")
