@@ -14,191 +14,101 @@ if __name__ == '__main__':
     context.load_cert_chain(certfile='certificate.cer', keyfile='private.key')
     context.load_verify_locations(cafile='CA.pem')  # Load the CA certificate for client verification
     
-    # Run the Flask app with SSL enabled
-    app.run(host='127.0.0.1', port=8013, ssl_context=context)
-import cv2
-import numpy as np
 import os
-import pytesseract
-import pandas as pd
-from sklearn import metrics
+import fasttext
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from datetime import datetime
 
-# Set the Tesseract executable path
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Paths and configurations
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+lang_model = fasttext.load_model(pretrained_lang_model)
 
-# Function to adjust brightness and contrast
-def adjust_brightness_contrast(image, brightness=0, contrast=0):
-    image = np.int16(image)
-    image = image * (contrast / 127 + 1) - contrast + brightness
-    image = np.clip(image, 0, 255)
-    return np.uint8(image)
+checkpoint = r"C:\CitiDev\language_prediction\m2m"
+translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Function to denoise image
-def denoise_image(image):
-    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+translation_pipeline = pipeline(
+    'translation',
+    model=translation_model,
+    tokenizer=tokenizer,
+    max_length=400
+)
 
-# Function to blur image
-def blur_image(image):
-    return cv2.GaussianBlur(image, (5, 5), 0)
+input_folder = r"C:\CitiDev\language_prediction\input1"
+output_folder = r"C:\CitiDev\language_prediction\output"
+target_language = 'fr'  # Target language for translation
 
-# Function to apply thresholding
-def apply_threshold(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    return thresh
+# Ensure the output folder exists
+os.makedirs(output_folder, exist_ok=True)
 
-# Function to apply morphological operations
-def morphological_operations(image):
-    kernel = np.ones((3, 3), np.uint8)
-    image = cv2.dilate(image, kernel, iterations=1)
-    image = cv2.erode(image, kernel, iterations=1)
-    return image
+# Logging setup
+log_file = os.path.join(output_folder, f"translation_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
 
-# Function to calculate image metrics
-def calculate_metrics(image):
-    metrics = {}
-    metrics['image_size'] = f"{image.shape[1]} x {image.shape[0]}"
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    noise_estimation = np.std(image)
-    metrics['blurriness'] = laplacian_var
-    metrics['noise_level'] = noise_estimation
-    return metrics
+def log_message(message):
+    """Log a message to the console and log file."""
+    with open(log_file, 'a', encoding='utf-8') as log:
+        log.write(message + '\n')
+    print(message)
 
-# Function to check if image is colored
-def is_colored(image):
-    if len(image.shape) == 2:
-        return False
-    elif len(image.shape) == 3:
-        b, g, r = cv2.split(image)
-        return not (np.array_equal(b, g) and np.array_equal(b, r))
-    else:
-        raise ValueError("Unsupported image format")
+# Function to detect language
+def detect_language(text):
+    prediction = lang_model.predict(text.strip().replace("\n", ""))
+    return prediction[0][0].replace("__label__", ""), prediction[1][0]
 
-# Function to extract text using Tesseract OCR
-def extract_text_with_tesseract(image, lang='eng'):
-    try:
-        config = "--psm 3"
-        text = pytesseract.image_to_string(image, config=config, lang=lang)
-        return text.strip()
-    except Exception as e:
-        print(f"Error extracting text: {e}")
-        return ""
+# Processing files
+for filename in os.listdir(input_folder):
+    if filename.endswith(".txt"):
+        file_path = os.path.join(input_folder, filename)
+        output_file_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_translated.txt")
 
-# Function to calculate image size in human-readable format
-def get_image_size(file_path):
-    size_in_bytes = os.path.getsize(file_path)
-    size_in_kb = size_in_bytes / 1024
-    size_in_mb = size_in_kb / 1024
-    if size_in_mb >= 1:
-        return f"{size_in_mb:.2f} MB"
-    else:
-        return f"{size_in_kb:.2f} KB"
-
-# Function to calculate PSNR between two images
-def calculate_psnr(original, processed):
-    mse = np.mean((original - processed) ** 2)
-    if mse == 0:
-        return float('inf')
-    max_pixel = 255.0
-    psnr = 10 * np.log10((max_pixel ** 2) / mse)
-    return psnr
-
-# Function to save metrics to an Excel file in a specific sequence
-def save_metrics_to_excel(metrics_list, excel_path):
-    df = pd.DataFrame(metrics_list, columns=[
-        'image_name', 
-        'pre_original_size', 
-        'pre_image_size', 
-        'pre_blurriness', 
-        'pre_noise_level', 
-        'post_processed_size', 
-        'post_image_size', 
-        'post_blurriness', 
-        'post_noise_level', 
-        'pre_psnr', 
-        'post_psnr'
-    ])
-    df.to_excel(excel_path, index=False, engine='openpyxl')
-    print(f"Metrics saved to: {excel_path}")
-
-# Main function to process images
-def process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang="eng"):
-    valid_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff")
-    image_paths = [os.path.join(input_folder, file) for file in os.listdir(input_folder) if file.lower().endswith(valid_extensions)]
-    
-    if not image_paths:
-        raise ValueError(f"No image file found in the folder: {input_folder}")
-    
-    post_output_dir = os.path.join(output_dir, "PostProcessed")
-    os.makedirs(post_output_dir, exist_ok=True)
-    metric_list = []
-
-    for image_path in image_paths:
-        image = cv2.imread(image_path)
-        if image is None:
-            print(f"Failed to load image: {image_path}. Skipping...")
-            continue
-        
         try:
-            print(f"Processing image: {image_path}")
-            image_name = os.path.basename(image_path)
-            original_size = get_image_size(image_path)
-            
-            # Pre-metrics
-            pre_metrics = calculate_metrics(image)
-            pre_metrics['original_size'] = original_size
-            
-            if is_colored(image):
-                print("Image is colored. Applying preprocessing...")
-                denoised = denoise_image(image)
-                adjusted = adjust_brightness_contrast(denoised, brightness=30, contrast=30)
-                preprocessed = adjusted
-            else:
-                print("Image is black-and-white. Applying preprocessing...")
-                blurred = blur_image(image)
-                preprocessed = apply_threshold(blurred)
-            
-            # Morphological operations
-            morphed = morphological_operations(preprocessed)
-            processed_image_path = os.path.join(post_output_dir, f"processed_{image_name}")
-            cv2.imwrite(processed_image_path, morphed)
-            
-            # Post-processing metrics
-            post_metrics = calculate_metrics(morphed)
-            post_metrics['processed_size'] = get_image_size(processed_image_path)
-            post_metrics['psnr'] = f"{calculate_psnr(image, morphed):.2f} dB"
-            
-            # Add metrics to list in the specified sequence
-            metric_list.append({
-                'image_name': image_name,
-                'pre_original_size': pre_metrics['original_size'],
-                'pre_image_size': pre_metrics['image_size'],
-                'pre_blurriness': pre_metrics['blurriness'],
-                'pre_noise_level': pre_metrics['noise_level'],
-                'post_processed_size': post_metrics['processed_size'],
-                'post_image_size': post_metrics['image_size'],
-                'post_blurriness': post_metrics['blurriness'],
-                'post_noise_level': post_metrics['noise_level'],
-                'pre_psnr': 'N/A',  # PSNR is not applicable for pre-processing
-                'post_psnr': post_metrics['psnr']
-            })
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read().strip()
+
+            if not text:
+                log_message(f"Skipping {filename}: File is empty.")
+                continue
+
+            log_message(f"\nProcessing {filename}:")
+
+            # Split text into segments
+            segments = text.split(" ")
+            translated_segments = []
+
+            for segment in segments:
+                segment = segment.strip()
+                if not segment:
+                    continue
+
+                # Detect language of the segment
+                detected_language, confidence = detect_language(segment)
+                log_message(f"Segment: '{segment}' | Detected Language: {detected_language} | Confidence: {confidence}")
+
+                try:
+                    # Translate segment
+                    output = translation_pipeline(
+                        segment,
+                        src_lang=detected_language,
+                        tgt_lang=target_language
+                    )
+                    translated_text = output[0]['translation_text']
+                    log_message(f"Translated Segment: {translated_text}")
+                    translated_segments.append(translated_text)
+                except Exception as segment_error:
+                    log_message(f"Error translating segment: {segment}. Error: {segment_error}")
+                    translated_segments.append(segment)  # Keep original if translation fails
+
+            # Combine translated segments into full text
+            full_translated_text = " ".join(translated_segments)
+            log_message(f"Original: {text}")
+            log_message(f"Translated: {full_translated_text}")
+
+            # Save the translation to a file
+            with open(output_file_path, 'w', encoding='utf-8') as output_file:
+                output_file.write(full_translated_text)
+
+            log_message(f"Translation saved to: {output_file_path}\n")
+
         except Exception as e:
-            print(f"Error processing image: {image_path}. Error: {e}")
-            continue
-    
-    # Save metrics to Excel
-    if metric_list:
-        save_metrics_to_excel(metric_list, excel_path)
-        print("Batch processing completed. Metrics saved to Excel.")
-    else:
-        print("No image processed successfully.")
+            log_message(f"Error processing {filename}: {e}")
 
-# Define paths
-input_folder = r"C:\CitiDev\preprocessing\Input"
-output_dir = r"C:\CitiDev\preprocessing\Output"
-excel_path = r"C:\CitiDev\preprocessing\Xlsx\metrics.xlsx"
-ocr_lang = 'eng'
-
-# Process images
-process_image_from_folder(input_folder, output_dir, excel_path, ocr_lang)
