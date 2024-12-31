@@ -20,7 +20,7 @@ import PyPDF2
 import json
 
 
-def translate_content(content, lang_model, translation_pipeline, target_language="fr"):
+def translate_content(content, lang_model, translation_pipeline, target_language):
     """
     Translate the provided content into the target language.
 
@@ -67,7 +67,7 @@ def translate_content(content, lang_model, translation_pipeline, target_language
     return translated_segments
 
 
-def translate_file(file_path, pretrained_lang_model, checkpoint, target_language="fr"):
+def translate_file(file_path, pretrained_lang_model, checkpoint, target_language):
     """
     Translate the content of a single file into the target language.
 
