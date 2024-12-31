@@ -14,7 +14,7 @@ if __name__ == '__main__':
     context.load_cert_chain(certfile='certificate.cer', keyfile='private.key')
     context.load_verify_locations(cafile='CA.pem')  # Load the CA certificate for client verification
     
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import shutil
 from translator import translate_file
 import uvicorn
@@ -27,7 +27,20 @@ CHECKPOINT = r"C:\CitiDev\language_prediction\m2m"
 
 
 @app.post("/translate/")
-async def translate_file_endpoint(file: UploadFile = File(...), target_language: str = "fr"):
+async def translate_file_endpoint(
+    file: UploadFile = File(...), 
+    target_language: str = Form(...)
+):
+    """
+    Translate the uploaded file into the target language.
+
+    Args:
+        file (UploadFile): The file to be uploaded and translated.
+        target_language (str): The target language for translation.
+
+    Returns:
+        dict: Translated content and metadata.
+    """
     try:
         # Validate file extension
         file_extension = file.filename.split('.')[-1].lower()
