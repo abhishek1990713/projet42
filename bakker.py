@@ -14,108 +14,46 @@ if __name__ == '__main__':
     context.load_cert_chain(certfile='certificate.cer', keyfile='private.key')
     context.load_verify_locations(cafile='CA.pem')  # Load the CA certificate for client verification
     
-import fasttext
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-import PyPDF2
-import json
+from fastapi import FastAPI, UploadFile, File, HTTPException
+import shutil
+from translator import translate_file
+import uvicorn
+
+app = FastAPI()
+
+# Define paths for the models
+PRETRAINED_LANG_MODEL = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+CHECKPOINT = r"C:\CitiDev\language_prediction\m2m"
 
 
-def translate_content(content, lang_model, translation_pipeline, target_language):
-    """
-    Translate the provided content into the target language.
+@app.post("/translate/")
+async def translate_file_endpoint(file: UploadFile = File(...), target_language: str = "fr"):
+    try:
+        # Validate file extension
+        file_extension = file.filename.split('.')[-1].lower()
+        if file_extension not in ["txt", "pdf", "json"]:
+            raise HTTPException(status_code=400, detail="Only TXT, PDF, and JSON files are supported.")
 
-    Args:
-        content (str): The input content to translate.
-        lang_model: Pretrained language detection model.
-        translation_pipeline: Hugging Face translation pipeline.
-        target_language (str): The target language for translation.
+        # Save the uploaded file temporarily
+        temp_file_path = f"temp.{file_extension}"
+        with open(temp_file_path, "wb") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
 
-    Returns:
-        list: List of translated segments.
-    """
-    segments = content.split("\n")
-    translated_segments = []
+        # Translate the file
+        result = translate_file(
+            file_path=temp_file_path,
+            pretrained_lang_model=PRETRAINED_LANG_MODEL,
+            checkpoint=CHECKPOINT,
+            target_language=target_language
+        )
 
-    for segment in segments:
-        segment = segment.strip()
-        if not segment:
-            continue
+        # Clean up the temporary file
+        shutil.os.remove(temp_file_path)
 
-        # Detect language
-        prediction = lang_model.predict(segment.replace("\n", ""))
-        detected_language = prediction[0][0].replace("__label__", "")
-
-        try:
-            # Translate segment
-            output = translation_pipeline(
-                segment,
-                src_lang=detected_language,
-                tgt_lang=target_language
-            )
-            translated_segments.append({
-                "original": segment,
-                "detected_language": detected_language,
-                "translated": output[0]['translation_text']
-            })
-        except Exception as e:
-            translated_segments.append({
-                "original": segment,
-                "detected_language": detected_language,
-                "translated": f"Error: {str(e)}"
-            })
-
-    return translated_segments
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-def translate_file(file_path, pretrained_lang_model, checkpoint, target_language):
-    """
-    Translate the content of a single file into the target language.
-
-    Args:
-        file_path (str): Path to the input file.
-        pretrained_lang_model (str): Path to the FastText language detection model.
-        checkpoint (str): Path to the translation model checkpoint.
-        target_language (str): The target language for translation.
-
-    Returns:
-        dict: Translated content and metadata.
-    """
-    # Load models
-    lang_model = fasttext.load_model(pretrained_lang_model)
-    translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-
-    translation_pipeline = pipeline(
-        'translation',
-        model=translation_model,
-        tokenizer=tokenizer,
-        max_length=400
-    )
-
-    # Read file content
-    _, ext = file_path.split('.')[-1].lower()
-    content = ""
-
-    if ext == "txt":
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read().strip()
-    elif ext == "pdf":
-        with open(file_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            for page in reader.pages:
-                content += page.extract_text().strip() + "\n"
-    elif ext == "json":
-        with open(file_path, 'r', encoding='utf-8') as file:
-            data = json.load(file)
-            content = json.dumps(data, ensure_ascii=False, indent=4)
-    else:
-        raise ValueError("Unsupported file format. Only PDF, TXT, and JSON files are allowed.")
-
-    # Translate content
-    translated_content = translate_content(content, lang_model, translation_pipeline, target_language)
-
-    return {
-        "file_name": file_path.split("/")[-1],
-        "target_language": target_language,
-        "translations": translated_content
-    }
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8888)
