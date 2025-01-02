@@ -3,119 +3,69 @@ import ssl
 
 app = Flask(__name__)
 
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    return jsonify({"message": "Hello, client! Connection is secure."})
-
-if __name__ == '__main__':
-    # SSL context configuration
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.verify_mode = ssl.CERT_REQUIRED  # Require client certificate verification
-    context.load_cert_chain(certfile='certificate.cer', keyfile='private.key')
-    context.load_verify_locations(cafile='CA.pem')  # Load the CA certificate for client verification
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from application import initialize_models, translate_file
+import shutil
 import os
-import json
-import fasttext
-from PyPDF2 import PdfReader
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+
+# Initialize FastAPI app
+app = FastAPI()
+
+# Port configuration
+PORT = 8888
+
+# Paths for the models
+LANG_MODEL_PATH = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+TRANSLATION_MODEL_PATH = r"C:\CitiDev\language_prediction\m2m"
+
+# Initialize models at startup
+lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
 
 
-# Load models
-def initialize_models(lang_model_path, translation_model_path):
-    lang_model = fasttext.load_model(lang_model_path)
-    translation_model = AutoModelForSeq2SeqLM.from_pretrained(translation_model_path)
-    tokenizer = AutoTokenizer.from_pretrained(translation_model_path)
-    translation_pipeline = pipeline(
-        'translation',
-        model=translation_model,
-        tokenizer=tokenizer,
-        max_length=400
-    )
-    return lang_model, translation_pipeline
-
-
-# Detect the language of text
-def detect_language(text, lang_model):
-    prediction = lang_model.predict(text.strip().replace("\n", ""))
-    return prediction[0][0].replace("__label__", ""), prediction[1][0]
-
-
-# Extract text based on file type
-def extract_text(file_path):
-    file_extension = os.path.splitext(file_path)[1].lower()
+@app.post("/translate/")
+async def translate_file_api(
+    file: UploadFile = File(...), 
+    target_language: str = Form(...)
+):
+    """
+    API Endpoint to translate a file (PDF, TXT, JSON).
     
-    if file_extension == ".pdf":
-        try:
-            reader = PdfReader(file_path)
-            text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-            return text
-        except Exception as e:
-            return {"status": "error", "message": f"Error reading PDF: {e}"}
-    
-    elif file_extension == ".txt":
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read().strip()
-        except Exception as e:
-            return {"status": "error", "message": f"Error reading TXT file: {e}"}
-    
-    elif file_extension == ".json":
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                if isinstance(data, dict) and "text" in data:
-                    return data["text"]
-                else:
-                    return {"status": "error", "message": "JSON file must contain a 'text' key."}
-        except Exception as e:
-            return {"status": "error", "message": f"Error reading JSON file: {e}"}
-    
-    else:
-        return {"status": "error", "message": "Unsupported file format."}
+    Args:
+        file (UploadFile): Uploaded file to be translated.
+        target_language (str): Target language for translation.
+
+    Returns:
+        JSON response with translation details.
+    """
+    try:
+        # Save the uploaded file temporarily
+        temp_file_path = os.path.join("temp", file.filename)
+        os.makedirs("temp", exist_ok=True)
+
+        with open(temp_file_path, "wb") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+
+        # Call the translate_file function from application.py
+        result = translate_file(temp_file_path, lang_model, translation_pipeline, target_language)
+
+        # Clean up the temporary file
+        os.remove(temp_file_path)
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# Translate file content
-def translate_file(file_path, lang_model, translation_pipeline, target_language):
-    text = extract_text(file_path)
-    if isinstance(text, dict) and text.get("status") == "error":
-        return text  # Return error message if text extraction failed
+@app.get("/")
+def read_root():
+    """
+    Root endpoint to test if the API is running.
+    """
+    return {"message": "Translation API is running on port 8888."}
 
-    if not text:
-        return {"status": "error", "message": "Input file is empty or has no readable text."}
 
-    segments = text.split("\n")
-    translated_segments = []
-    log_entries = []
-
-    for segment in segments:
-        segment = segment.strip()
-        if not segment:
-            continue
-
-        detected_language, confidence = detect_language(segment, lang_model)
-        log_entries.append(
-            {
-                "segment": segment,
-                "detected_language": detected_language,
-                "confidence": confidence
-            }
-        )
-
-        try:
-            output = translation_pipeline(
-                segment,
-                src_lang=detected_language,
-                tgt_lang=target_language
-            )
-            translated_text = output[0]['translation_text']
-            translated_segments.append({"original": segment, "translated": translated_text})
-        except Exception as e:
-            translated_segments.append({"original": segment, "translated": None, "error": str(e)})
-
-    return {
-        "status": "success",
-        "original_text": text,
-        "translated_text": "\n".join([t["translated"] or "" for t in translated_segments]),
-        "details": translated_segments,
-        "log": log_entries
-    }
+# Run the FastAPI app on port 8888
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("fast:app", host="0.0.0.0", port=PORT, reload=True)
