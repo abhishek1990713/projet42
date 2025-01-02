@@ -13,13 +13,11 @@ if __name__ == '__main__':
     context.verify_mode = ssl.CERT_REQUIRED  # Require client certificate verification
     context.load_cert_chain(certfile='certificate.cer', keyfile='private.key')
     context.load_verify_locations(cafile='CA.pem')  # Load the CA certificate for client verification
-    
 import os
 import json
 import fasttext
 from PyPDF2 import PdfReader
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-from datetime import datetime
 
 
 # Load models
@@ -77,7 +75,7 @@ def extract_text(file_path):
 
 
 # Translate file content
-def translate_file(file_path, lang_model, translation_pipeline, target_language='en'):
+def translate_file(file_path, lang_model, translation_pipeline, target_language):
     text = extract_text(file_path)
     if isinstance(text, dict) and text.get("status") == "error":
         return text  # Return error message if text extraction failed
@@ -121,22 +119,3 @@ def translate_file(file_path, lang_model, translation_pipeline, target_language=
         "details": translated_segments,
         "log": log_entries
     }
-
-
-# Example usage
-if __name__ == "__main__":
-    # Paths for the models
-    lang_model_path = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
-    translation_model_path = r"C:\CitiDev\language_prediction\m2m"
-
-    # Initialize models
-    lang_model, translation_pipeline = initialize_models(lang_model_path, translation_model_path)
-
-    # Input file path
-    input_file = r"C:\CitiDev\language_prediction\input_file.pdf"  # Change to your file path
-
-    # Translate and get the output in JSON format
-    output = translate_file(input_file, lang_model, translation_pipeline, target_language="en")
-
-    # Print JSON output
-    print(json.dumps(output, indent=4, ensure_ascii=False))
