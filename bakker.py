@@ -1,16 +1,15 @@
 from flask import Flask, jsonify, request
 import ssl
 
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from application import initialize_models, translate_file
+import shutil
 import os
-import json
-import fasttext
-from PyPDF2 import PdfReader
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-from datetime import datetime
+import threading
 import logging
 
 # Setup logging
-LOG_FILE = "translation_log.txt"
+LOG_FILE = "api_log.txt"
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -18,117 +17,65 @@ logging.basicConfig(
 )
 
 
-def log_message(message):
-    logging.info(message)
-    print(message)
+# Initialize FastAPI app
+app = FastAPI()
+
+# Port configuration
+PORT = 8888
+
+# Paths for the models
+LANG_MODEL_PATH = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+TRANSLATION_MODEL_PATH = r"C:\CitiDev\language_prediction\m2m"
+
+# Initialize models at startup
+try:
+    lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
+except RuntimeError as e:
+    logging.error(f"Model initialization failed: {e}")
+    raise RuntimeError(f"Model initialization failed: {e}")
 
 
-# Load models
-def initialize_models(lang_model_path, translation_model_path):
-    log_message("Initializing models...")
+@app.post("/translate/")
+async def translate_file_api(
+    file: UploadFile = File(...),
+    target_language: str = Form(...)
+):
+    """
+    API Endpoint to translate a file (PDF, TXT, JSON).
+    """
     try:
-        lang_model = fasttext.load_model(lang_model_path)
-        log_message("Language model loaded successfully.")
+        temp_file_path = os.path.join("temp", file.filename)
+        os.makedirs("temp", exist_ok=True)
+
+        with open(temp_file_path, "wb") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+
+        def process_translation():
+            try:
+                result = translate_file(temp_file_path, lang_model, translation_pipeline, target_language)
+                os.remove(temp_file_path)
+                return result
+            except Exception as e:
+                os.remove(temp_file_path)
+                raise e
+
+        thread = threading.Thread(target=process_translation)
+        thread.start()
+        thread.join()
+
+        return {"status": "success", "message": "Translation completed. Check logs for details."}
+
     except Exception as e:
-        log_message(f"Error loading FastText model: {e}")
-        raise RuntimeError(f"Error loading FastText model: {e}")
-
-    try:
-        translation_model = AutoModelForSeq2SeqLM.from_pretrained(translation_model_path)
-        tokenizer = AutoTokenizer.from_pretrained(translation_model_path)
-        translation_pipeline = pipeline(
-            'translation',
-            model=translation_model,
-            tokenizer=tokenizer,
-            max_length=400
-        )
-        log_message("Translation model and tokenizer loaded successfully.")
-    except Exception as e:
-        log_message(f"Error loading Transformers model: {e}")
-        raise RuntimeError(f"Error loading Transformers model: {e}")
-
-    return lang_model, translation_pipeline
+        logging.error(f"Error in translate_file_api: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# Detect the language of text
-def detect_language(text, lang_model):
-    try:
-        prediction = lang_model.predict(text.strip().replace("\n", ""))
-        log_message(f"Detected language: {prediction[0][0]} with confidence: {prediction[1][0]}")
-        return prediction[0][0].replace("__label__", ""), prediction[1][0]
-    except Exception as e:
-        log_message(f"Language detection failed: {e}")
-        raise RuntimeError(f"Language detection failed: {e}")
+@app.get("/")
+def read_root():
+    logging.info("Root endpoint accessed.")
+    return {"message": "Translation API is running on port 8888."}
 
 
-# Extract text based on file type
-def extract_text(file_path):
-    try:
-        log_message(f"Extracting text from file: {file_path}")
-        file_extension = os.path.splitext(file_path)[1].lower()
-
-        if file_extension == ".pdf":
-            reader = PdfReader(file_path)
-            text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-            log_message("Text extracted from PDF successfully.")
-            return text
-        elif file_extension == ".txt":
-            with open(file_path, 'r', encoding='utf-8') as file:
-                text = file.read().strip()
-                log_message("Text extracted from TXT file successfully.")
-                return text
-        elif file_extension == ".json":
-            with open(file_path, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                text = data.get("text", "")
-                log_message("Text extracted from JSON file successfully.")
-                return text
-        else:
-            log_message("Unsupported file type.")
-            return None
-    except Exception as e:
-        log_message(f"Error extracting text: {e}")
-        raise RuntimeError(f"Error extracting text: {e}")
-
-
-# Translate file content
-def translate_file(file_path, lang_model, translation_pipeline, target_language):
-    log_message(f"Starting translation for file: {file_path}")
-    text = extract_text(file_path)
-    if not text:
-        return {"status": "error", "message": "No valid text extracted from the file."}
-
-    segments = text.split("\n")
-    translated_segments = []
-    log_entries = []
-
-    for segment in segments:
-        if not segment.strip():
-            continue
-
-        detected_language, confidence = detect_language(segment, lang_model)
-        log_entries.append(
-            {"segment": segment, "detected_language": detected_language, "confidence": confidence}
-        )
-
-        try:
-            output = translation_pipeline(
-                segment,
-                src_lang=detected_language,
-                tgt_lang=target_language
-            )
-            translated_text = output[0]['translation_text']
-            translated_segments.append({"original": segment, "translated": translated_text})
-            log_message(f"Segment translated successfully: {segment} -> {translated_text}")
-        except Exception as e:
-            log_message(f"Error translating segment: {segment}. Error: {e}")
-            translated_segments.append({"original": segment, "translated": None, "error": str(e)})
-
-    log_message(f"Translation completed for file: {file_path}")
-    return {
-        "status": "success",
-        "original_text": text,
-        "translated_text": "\n".join([t["translated"] or "" for t in translated_segments]),
-        "details": translated_segments,
-        "log": log_entries
-    }
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("fast:app", host="0.0.0.0", port=PORT, reload=True)
