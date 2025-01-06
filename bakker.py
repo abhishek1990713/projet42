@@ -1,81 +1,43 @@
 from flask import Flask, jsonify, request
 import ssl
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from application import initialize_models, translate_file
-import shutil
-import os
-import threading
-import logging
+def calculate_metrics(image_path: str) -> Tuple[float, float]:
+    """Calculate noise-related metrics for an image."""
+    noise_level = calculate_noise(image_path)
+    noise_variance = noise2(image_path)
+    return noise_level, noise_variance
 
-# Setup logging
-LOG_FILE = "api_log.txt"
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+def print_metrics(image_path: str, stage: str):
+    """Print noise metrics for a given stage (before/after preprocessing)."""
+    noise_level, noise_variance = calculate_metrics(image_path)
+    print(f"\nMetrics {stage}:")
+    print(f" - Noise level: {noise_level}")
+    print(f" - Noise variance: {noise_variance}")
 
+def check_and_preprocess(image_path: str, output_path: str) -> str:
+    # Print initial metrics
+    print_metrics(image_path, "before preprocessing")
 
-# Initialize FastAPI app
-app = FastAPI()
+    # Determine if preprocessing is needed
+    noise_level, noise_variance = calculate_metrics(image_path)
+    if (40 < noise_level < 50 and noise_variance > 17) or (78 < noise_level < 88 and noise_variance > 17):
+        print("\nThe scanned document image has significant noise. Processing recommended.")
+        processed_image_path = preprocess_and_save_image(image_path, output_path)
+    elif noise_level > 90:
+        print("\nThe scanned document image has significant noise. Processing recommended.")
+        processed_image_path = preprocess_and_save_image(image_path, output_path)
+    else:
+        print("\nThe scanned document image has no significant noise. No processing required.")
+        return image_path
 
-# Port configuration
-PORT = 8888
+    # Print metrics after preprocessing
+    print_metrics(processed_image_path, "after preprocessing")
 
-# Paths for the models
-LANG_MODEL_PATH = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
-TRANSLATION_MODEL_PATH = r"C:\CitiDev\language_prediction\m2m"
-
-# Initialize models at startup
-try:
-    lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
-except RuntimeError as e:
-    logging.error(f"Model initialization failed: {e}")
-    raise RuntimeError(f"Model initialization failed: {e}")
-
-
-@app.post("/translate/")
-async def translate_file_api(
-    file: UploadFile = File(...),
-    target_language: str = Form(...)
-):
-    """
-    API Endpoint to translate a file (PDF, TXT, JSON).
-    """
-    try:
-        temp_file_path = os.path.join("temp", file.filename)
-        os.makedirs("temp", exist_ok=True)
-
-        with open(temp_file_path, "wb") as temp_file:
-            shutil.copyfileobj(file.file, temp_file)
-
-        def process_translation():
-            try:
-                result = translate_file(temp_file_path, lang_model, translation_pipeline, target_language)
-                os.remove(temp_file_path)
-                return result
-            except Exception as e:
-                os.remove(temp_file_path)
-                raise e
-
-        thread = threading.Thread(target=process_translation)
-        thread.start()
-        thread.join()
-
-        return {"status": "success", "message": "Translation completed. Check logs for details."}
-
-    except Exception as e:
-        logging.error(f"Error in translate_file_api: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/")
-def read_root():
-    logging.info("Root endpoint accessed.")
-    return {"message": "Translation API is running on port 8888."}
-
+    return processed_image_path
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("fast:app", host="0.0.0.0", port=PORT, reload=True)
+    image_path = r"C:\CitiDev\Trade_doc\AWB_output_jpg\310089119_21530133_1_2303725310089119.008.jpg"
+    output_folder = r"C:\CitiDev\Image_preprocessing\Output"
+    os.makedirs(output_folder, exist_ok=True)
+    processed_image_path = check_and_preprocess(image_path, output_folder)
+    print(f"\nProcessing completed. Result saved at: {processed_image_path}")
