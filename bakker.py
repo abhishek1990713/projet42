@@ -2,74 +2,94 @@ from flask import Flask, jsonify, request
 import ssl
 
 import os
+from datetime import datetime
+import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-from fasttext import load_model
 
-# Load the pre-trained language detection model
-pretrained_lang_model_path = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
-lang_model = load_model(pretrained_lang_model_path)
-
-# Load the translation model and tokenizer
+# Paths to models and directories
+pretrained_lang_model = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
 checkpoint = r"C:\CitiDev\language_prediction\m2m"
+input_folder = r"C:\CitiDev\language_prediction\input"
+target_language = 'en'
+
+# Log file setup
+log_file = os.path.join(input_folder, f"translation_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+
+# Initialize models
+lang_model = fasttext.load_model(pretrained_lang_model)
 translation_model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-# Create a translation pipeline
+# Translation pipeline
 translation_pipeline = pipeline(
-    "translation",
+    'translation',
     model=translation_model,
     tokenizer=tokenizer,
-    max_length=100
+    max_length=400
 )
 
+# Function to log messages
+def log_message(message):
+    with open(log_file, 'a', encoding='utf-8') as log:
+        log.write(message + '\n')
+    print(message)
 
+# Function to detect language
 def detect_language(text):
-    """Detect the language of a given text."""
     prediction = lang_model.predict(text.strip().replace("\n", ""))
-    return prediction[0][0].replace("__label_", ""), prediction[1][0]
+    return prediction[0][0].replace("__label__", ""), prediction[1][0]
 
+# Process each file in the input folder
+for filename in os.listdir(input_folder):
+    if filename.endswith(".txt"):
+        file_path = os.path.join(input_folder, filename)
 
-# Process one file at a time
-def process_file(file_path):
-    """Process a single text file."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            text = file.read().strip()
-
-        if not text:
-            print("The file is empty.")
-            return
-
-        print(f"Original Text:\n{text}\n")
-
-        segments = text.split("\n")  # Split text into segments by lines
-        translated_segments = []
-
-        for segment in segments:
-            segment = segment.strip()
-            if not segment:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read().strip()
+            if not text:
+                log_message(f"Skipping {filename}: File is empty.")
                 continue
 
-            detected_language, confidence = detect_language(segment)
+            log_message(f"\nProcessing {filename}:")
 
-            try:
-                output = translation_pipeline(
-                    segment,
-                    src_lang=detected_language,
-                    tgt_lang='en'  # Target language is English
-                )
-                translated_text = output[0]['translation_text']
-                translated_segments.append(translated_text)
-            except Exception:
-                translated_segments.append(segment)
+            # Split text into segments
+            segments = text.split("\n")
+            translated_segments = []
 
-        full_translated_text = "\n".join(translated_segments)
-        print(f"Translated Text:\n{full_translated_text}\n")
+            for segment in segments:
+                segment = segment.strip()
+                if not segment:
+                    continue
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+                # Detect language
+                detected_language, confidence = detect_language(segment)
+                log_message(f"Segment: '{segment}' | Detected Language: {detected_language} | Confidence: {confidence}")
 
+                try:
+                    # Translate segment
+                    output = translation_pipeline(
+                        segment,
+                        src_lang=detected_language,
+                        tgt_lang=target_language
+                    )
+                    translated_text = output[0]['translation_text']
+                    log_message(f"Translated Segment: {translated_text}")
+                    translated_segments.append(translated_text)
+                except Exception as segment_error:
+                    log_message(f"Error translating segment: {segment}. Error: {segment_error}")
+                    translated_segments.append(segment)
 
-# Example usage: Provide the file path to process
-file_path = r"C:\CitiDev\language_prediction\input\example.txt"  # Replace with your file path
-process_file(file_path)
+            # Combine translated segments
+            full_translated_text = "\n".join(translated_segments)
+
+            log_message(f"Original: {text}")
+            log_message(f"Translated: {full_translated_text}")
+
+            # Print translation to console
+            print(f"\n### Translation for {filename} ###")
+            print(full_translated_text)
+            print("\n################################")
+
+        except Exception as e:
+            log_message(f"Error processing {filename}: {e}")
