@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request
 import ssl
 
 import os
-import json
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 from fasttext import load_model
 
@@ -23,65 +22,54 @@ translation_pipeline = pipeline(
     max_length=100
 )
 
-# Define the target language
-target_language = 'en'
+
+def detect_language(text):
+    """Detect the language of a given text."""
+    prediction = lang_model.predict(text.strip().replace("\n", ""))
+    return prediction[0][0].replace("__label_", ""), prediction[1][0]
 
 
-def process_file(input_file):
-    """
-    Process the input file and return the translation result in JSON format.
-    :param input_file: Path to the input text file.
-    :return: List of dictionaries containing translation results in JSON format.
-    """
-    if not os.path.exists(input_file):
-        return {"error": f"Input file does not exist: {input_file}"}
-
+# Process one file at a time
+def process_file(file_path):
+    """Process a single text file."""
     try:
-        # Read the input text file
-        with open(input_file, 'r', encoding='utf-8') as file:
+        with open(file_path, 'r', encoding='utf-8') as file:
             text = file.read().strip()
 
         if not text:
-            return {"error": "Input file is empty."}
+            print("The file is empty.")
+            return
+
+        print(f"Original Text:\n{text}\n")
 
         segments = text.split("\n")  # Split text into segments by lines
-        results = []
+        translated_segments = []
 
         for segment in segments:
             segment = segment.strip()
             if not segment:
                 continue
 
-            detected_language, confidence = lang_model.predict(segment.strip().replace("\n", ""))
-            detected_language = detected_language[0].replace("__label_", "")
-            confidence = confidence[0]
+            detected_language, confidence = detect_language(segment)
 
             try:
                 output = translation_pipeline(
                     segment,
                     src_lang=detected_language,
-                    tgt_lang=target_language
+                    tgt_lang='en'  # Target language is English
                 )
                 translated_text = output[0]['translation_text']
+                translated_segments.append(translated_text)
             except Exception:
-                translated_text = segment  # Keep original text if translation fails
+                translated_segments.append(segment)
 
-            results.append({
-                "original_text": segment,
-                "detected_language": detected_language,
-                "confidence": confidence,
-                "translated_text": translated_text
-            })
-
-        return results
+        full_translated_text = "\n".join(translated_segments)
+        print(f"Translated Text:\n{full_translated_text}\n")
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"An error occurred: {e}")
 
 
-# Example Usage
-input_file = r"C:\CitiDev\language_prediction\input\input.txt"  # Specify the input file
-result = process_file(input_file)
-
-# Display the result
-print(json.dumps(result, ensure_ascii=False, indent=4))
+# Example usage: Provide the file path to process
+file_path = r"C:\CitiDev\language_prediction\input\example.txt"  # Replace with your file path
+process_file(file_path)
