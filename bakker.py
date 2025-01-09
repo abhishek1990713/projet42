@@ -49,8 +49,10 @@ def initialize_models(lang_model_path, translation_model_path):
 def detect_language(text, lang_model):
     try:
         prediction = lang_model.predict(text.strip())
-        log_message(f"Detected language: {prediction[0][0]} with confidence: {prediction[1][0]}")
-        return prediction[0][0].replace("__label__", ""), prediction[1][0]
+        detected_lang = prediction[0][0].replace("__label__", "")
+        confidence = prediction[1][0]
+        log_message(f"Detected language: {detected_lang} with confidence: {confidence}")
+        return detected_lang, confidence
     except Exception as e:
         log_message(f"Language detection failed: {e}")
         raise RuntimeError(f"Language detection failed: {e}")
@@ -64,26 +66,31 @@ def translate_details(details, lang_model, translation_pipeline, target_language
         if not detail.strip():
             continue
 
-        detected_language, confidence = detect_language(detail, lang_model)
-        log_entries.append({
-            "detail": detail,
-            "detected_language": detected_language,
-            "confidence": confidence
-        })
-
         try:
+            # Language Detection
+            detected_language, confidence = detect_language(detail, lang_model)
+            log_entries.append({
+                "detail": detail,
+                "detected_language": detected_language,
+                "confidence": confidence
+            })
+
+            # Translation
             output = translation_pipeline(detail, src_lang=detected_language, tgt_lang=target_language)
-            translated_text = output[0]['translation_text']
-            translated_segments.append({"original": detail, "translated": translated_text})
+            translated_text = output[0]['translation_text'].strip()
+
+            translated_segments.append(translated_text)
             log_message(f"Detail translated successfully: {detail} -> {translated_text}")
+
         except Exception as e:
             log_message(f"Error translating detail: {detail}. Error: {e}")
-            translated_segments.append({"original": detail, "translated": None, "error": str(e)})
+            translated_segments.append(f"Error translating: {detail}")
 
+    # Ensure proper formatting
     return {
         "status": "success",
         "original_details": details,
-        "translated_details": [t["translated"] or "" for t in translated_segments],
+        "translated_details": translated_segments,
         "log": log_entries
     }
 
@@ -96,12 +103,12 @@ lang_model, translation_pipeline = initialize_models(lang_model_path, translatio
 
 # Input details
 details = [
-    "Detected Label: Expiration date: 2024年(令和06年) 06月01日まで有効",
+    "Detected Label: Expiration date: 2024年(令和96年) 06月01日まで有効",
     "Extracted Year: 2024",
     "Year 2024 is within the valid range (2024-2032).",
-    "Detected Label: Name: 曾国置本露花子",
+    "Detected Label: Name: 會国置本露花子",
     "Detected Label: Address: ヨメカ関島",
-    "Detected Label: DOB: 昭和61年 5月1日生"
+    "Detected Label: DOB: 昭和61年5月1日生"
 ]
 
 # Translate details
