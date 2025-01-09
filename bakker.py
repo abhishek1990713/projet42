@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 import ssl
+import fasttext
 
 import fasttext
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
@@ -55,32 +56,39 @@ def detect_language(text, lang_model):
         logger.error(f"Language detection failed: {e}")
         raise RuntimeError(f"Language detection failed: {e}")
 
-def translate_text(details, lang_model, translation_pipeline, target_language="en"):
-    """Translate a list of text segments to the target language."""
+def translate_segment(segment, lang_model, translation_pipeline, target_language="en"):
+    """Translate a single segment of text."""
+    try:
+        if not segment.strip():
+            return None  # Skip empty segments
+
+        # Detect language of the segment
+        detected_language, confidence = detect_language(segment, lang_model)
+
+        # Translate the text using the translation pipeline
+        output = translation_pipeline(segment, src_lang=detected_language, tgt_lang=target_language)
+        translated_text = output[0]["translation_text"]
+
+        logger.info(f"Translated: {segment} -> {translated_text}")
+        return translated_text
+    except Exception as e:
+        logger.error(f"Error translating segment: {segment}. Error: {e}")
+        return f"Error: {str(e)}"
+
+def translate_details(details, lang_model, translation_pipeline, target_language="en"):
+    """Translate a list of text details segment-wise."""
     translated_details = []
-    
+
     for detail in details:
-        if not detail.strip():  # Skip empty or invalid details
-            continue
-        try:
-            # Detect language of the segment
-            detected_language, confidence = detect_language(detail, lang_model)
-            
-            # Translate the text using the translation pipeline
-            output = translation_pipeline(detail, src_lang=detected_language, tgt_lang=target_language)
-            translated_text = output[0]["translation_text"]
-            
-            # Log the successful translation
-            logger.info(f"Translated: {detail} -> {translated_text}")
-            translated_details.append(translated_text)
-        except Exception as e:
-            # Log errors for translation failures
-            logger.error(f"Error translating detail: {detail}. Error: {e}")
-            translated_details.append(f"Error: {str(e)}")
-    
+        translated_text = translate_segment(detail, lang_model, translation_pipeline, target_language)
+        translated_details.append({
+            "original": detail,
+            "translated": translated_text
+        })
+
     return translated_details
 
-# Example of usage
+# Example usage
 if __name__ == "__main__":
     # Define paths for the language detection and translation models
     lang_model_path = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
@@ -89,7 +97,7 @@ if __name__ == "__main__":
     # Initialize the models
     lang_model, translation_pipeline = initialize_models(lang_model_path, translation_model_path)
 
-    # Example text for translation
+    # Example details for translation
     details = [
         "Detected Label: Expiration date: 2024年(令和06年) 06月01日まで有効",
         "Extracted Year: 2024",
@@ -99,10 +107,12 @@ if __name__ == "__main__":
         "Detected Label: DOB: 昭和61年 5月1日生"
     ]
 
-    # Translate the details to English
-    translated_details = translate_text(details, lang_model, translation_pipeline, target_language="en")
-    
-    # Print the translated details
+    # Translate the details segment-wise
+    translated_details = translate_details(details, lang_model, translation_pipeline, target_language="en")
+
+    # Print translated details
     print("Translated Details:")
-    for original, translated in zip(details, translated_details):
-        print(f"{original} -> {translated}")
+    for entry in translated_details:
+        print(f"Original: {entry['original']}")
+        print(f"Translated: {entry['translated']}")
+        print()
