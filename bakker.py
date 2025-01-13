@@ -55,53 +55,45 @@ def detect_language(text, lang_model):
         log_message(f"Language detection failed: {e}")
         raise RuntimeError(f"Language detection failed: {e}")
 
+# Translate word by word
+def translate_word_by_word(segment, lang_model, translation_pipeline, target_language):
+    words = segment.split()  # Split segment into words
+    translated_words = []
+    log_message(f"Translating segment word by word: {segment}")
+
+    for word in words:
+        try:
+            detected_language, confidence = detect_language(word, lang_model)
+            output = translation_pipeline(
+                word,
+                src_lang=detected_language,
+                tgt_lang=target_language
+            )
+            translated_word = output[0]['translation_text']
+            translated_words.append(translated_word)
+            log_message(f"Word translated: {word} -> {translated_word}")
+        except Exception as e:
+            log_message(f"Error translating word: {word}. Error: {e}")
+            translated_words.append(f"[Error: {word}]")
+
+    return " ".join(translated_words)
+
 # Translate text
-def translate_text(input_segments, lang_model, translation_pipeline, target_language):
-    log_message("Starting translation for input text...")
+def translate_text_word_by_word(input_segments, lang_model, translation_pipeline, target_language):
+    log_message("Starting word-by-word translation for input text...")
     translated_segments = []
-    log_entries = []
 
     for segment in input_segments:
         if not segment.strip():
             continue
-
-        detected_language, confidence = detect_language(segment, lang_model)
-        log_entries.append({
-            "segment": segment,
-            "detected_language": detected_language,
-            "confidence": confidence
+        translated_text = translate_word_by_word(segment, lang_model, translation_pipeline, target_language)
+        translated_segments.append({
+            "original": segment,
+            "translated": translated_text
         })
 
-        try:
-            # Explicitly define `src_lang` and `tgt_lang`
-            output = translation_pipeline(
-                segment,
-                src_lang=detected_language,
-                tgt_lang=target_language
-            )
-            translated_text = output[0]['translation_text']
-            if not translated_text.strip():
-                log_message(f"Translation failed or incomplete for segment: {segment}. Retrying...")
-                translated_text = f"Translation incomplete for: {segment}"
-            translated_segments.append({
-                "original": segment,
-                "translated": translated_text
-            })
-            log_message(f"Segment translated successfully: {segment} -> {translated_text}")
-        except Exception as e:
-            log_message(f"Error translating segment: {segment}. Error: {e}")
-            translated_segments.append({
-                "original": segment,
-                "translated": None,
-                "error": str(e)
-            })
-
-    log_message("Translation completed for input text.")
-    return {
-        "status": "success",
-        "translated_segments": translated_segments,
-        "log": log_entries
-    }
+    log_message("Word-by-word translation completed.")
+    return translated_segments
 
 # Direct input
 input_text_segments = [
@@ -120,9 +112,8 @@ translation_model_path = r"C:\CitiDev\language_prediction\m2m"
 # Initialize models
 lang_model, translation_pipeline = initialize_models(lang_model_path, translation_model_path)
 
-# Translate input
-output = translate_text(input_text_segments, lang_model, translation_pipeline, target_language="en")
+# Translate input word by word
+output = translate_text_word_by_word(input_text_segments, lang_model, translation_pipeline, target_language="en")
 
 # Print output
 print(json.dumps(output, indent=4, ensure_ascii=False))
-
