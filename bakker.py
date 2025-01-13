@@ -73,8 +73,16 @@ def translate_text(input_segments, lang_model, translation_pipeline, target_lang
         })
 
         try:
-            output = translation_pipeline(segment, src_lang=detected_language, tgt_lang=target_language)
+            # Explicitly define `src_lang` and `tgt_lang`
+            output = translation_pipeline(
+                segment,
+                src_lang=detected_language,
+                tgt_lang=target_language
+            )
             translated_text = output[0]['translation_text']
+            if not translated_text.strip():
+                log_message(f"Translation failed or incomplete for segment: {segment}. Retrying...")
+                translated_text = f"Translation incomplete for: {segment}"
             translated_segments.append({
                 "original": segment,
                 "translated": translated_text
@@ -117,3 +125,4 @@ output = translate_text(input_text_segments, lang_model, translation_pipeline, t
 
 # Print output
 print(json.dumps(output, indent=4, ensure_ascii=False))
+
