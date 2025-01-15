@@ -1,119 +1,36 @@
-import fasttext
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-import logging
-import json
 
-# Configure logging
-LOG_FILE = "translation_log.txt"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()
-    ]
-)
+from fasttext import load_model
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-def log_message(message):
-    logging.info(message)
+# Load FastText language detection model
+lang_detector = load_model('lid.176.bin')  # Download 'lid.176.bin' from FastText
 
-# Initialize models
-def initialize_models(lang_model_path, translation_model_path):
-    log_message("Initializing models...")
-    try:
-        lang_model = fasttext.load_model(lang_model_path)
-        log_message("Language model loaded successfully.")
-    except Exception as e:
-        log_message(f"Error loading FastText model: {e}")
-        raise RuntimeError(f"Error loading FastText model: {e}")
+# Load NLLB model and tokenizer
+model_name = "facebook/nllb-200-distilled-600M"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
-    try:
-        translation_model = AutoModelForSeq2SeqLM.from_pretrained(translation_model_path)
-        tokenizer = AutoTokenizer.from_pretrained(translation_model_path)
-        translation_pipeline = pipeline(
-            "translation",
-            model=translation_model,
-            tokenizer=tokenizer,
-            max_length=400
-        )
-        log_message("Translation model and tokenizer loaded successfully.")
-    except Exception as e:
-        log_message(f"Error loading Transformers model: {e}")
-        raise RuntimeError(f"Error loading Transformers model: {e}")
+def detect_language(text):
+    lang_prediction = lang_detector.predict(text, k=1)
+    return lang_prediction[0][0].replace("__label__", "")  # Extract language code
 
-    return lang_model, translation_pipeline
+def translate_text(text, target_lang):
+    # Detect source language
+    source_lang = detect_language(text)
+    
+    # Prepare inputs for translation
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+    
+    # Perform translation
+    translated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id[target_lang])
+    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    
+    return source_lang, translation
 
-# Detect language
-def detect_language(text, lang_model):
-    try:
-        prediction = lang_model.predict(text.strip())
-        detected_language = prediction[0][0].replace("__label__", "")
-        confidence = prediction[1][0]
-        log_message(f"Detected language: {detected_language} with confidence: {confidence}")
-        return detected_language, confidence
-    except Exception as e:
-        log_message(f"Language detection failed: {e}")
-        raise RuntimeError(f"Language detection failed: {e}")
+# Example usage
+input_text = "Bonjour, comment ça va ?"  # Example input text
+target_language = "eng"  # Target language code (e.g., "eng" for English)
 
-# Translate word by word
-def translate_word_by_word(segment, lang_model, translation_pipeline, target_language):
-    words = segment.split()  # Split segment into words
-    translated_words = []
-    log_message(f"Translating segment word by word: {segment}")
-
-    for word in words:
-        try:
-            detected_language, confidence = detect_language(word, lang_model)
-            output = translation_pipeline(
-                word,
-                src_lang=detected_language,
-                tgt_lang=target_language
-            )
-            translated_word = output[0]['translation_text']
-            translated_words.append(translated_word)
-            log_message(f"Word translated: {word} -> {translated_word}")
-        except Exception as e:
-            log_message(f"Error translating word: {word}. Error: {e}")
-            translated_words.append(f"[Error: {word}]")
-
-    return " ".join(translated_words)
-
-# Translate text
-def translate_text_word_by_word(input_segments, lang_model, translation_pipeline, target_language):
-    log_message("Starting word-by-word translation for input text...")
-    translated_segments = []
-
-    for segment in input_segments:
-        if not segment.strip():
-            continue
-        translated_text = translate_word_by_word(segment, lang_model, translation_pipeline, target_language)
-        translated_segments.append({
-            "original": segment,
-            "translated": translated_text
-        })
-
-    log_message("Word-by-word translation completed.")
-    return translated_segments
-
-# Direct input
-input_text_segments = [
-    "Detected Label: Expiration date: 2024年(令和96年) 06月01日まで有効。",
-    "Extracted Year: 2024",
-    "Year 2024 is within the valid range (2024-2032).",
-    "Detected Label: Name: 會国置本露花子",
-    "Detected Label: Address: ヨメカ関島",
-    "Detected Label: DOB: 昭和61年5月1日生"
-]
-
-# Define paths
-lang_model_path = r"C:\CitiDev\language_prediction\amz12\11d.176.bin"
-translation_model_path = r"C:\CitiDev\language_prediction\m2m"
-
-# Initialize models
-lang_model, translation_pipeline = initialize_models(lang_model_path, translation_model_path)
-
-# Translate input word by word
-output = translate_text_word_by_word(input_text_segments, lang_model, translation_pipeline, target_language="en")
-
-# Print output
-print(json.dumps(output, indent=4, ensure_ascii=False))
+source_language, translated_text = translate_text(input_text, target_language)
+print(f"Source Language: {source_language}")
+print(f"Translated Text: {translated_text}")
