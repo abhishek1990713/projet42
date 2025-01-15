@@ -1,36 +1,36 @@
+import fasttext
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
-from fasttext import load_model
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+# Load the FastText pretrained language detection model
+pretrained_lang_model = "/content/lid.176.bin"  # Ensure this file is downloaded
+model_ft = fasttext.load_model(pretrained_lang_model)
 
-# Load FastText language detection model
-lang_detector = load_model('lid.176.bin')  # Download 'lid.176.bin' from FastText
+# Text to detect and translate
+text = "صباح الخير، الجو جميل اليوم والسماء صافية."
+
+# Detect language using FastText
+predictions = model_ft.predict(text, k=1)  # Top-1 prediction
+input_lang = predictions[0][0].replace("__label__", "")  # Extract language code
+print(f"Detected Language: {input_lang}")
 
 # Load NLLB model and tokenizer
-model_name = "facebook/nllb-200-distilled-600M"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+checkpoint = "facebook/nllb-200-1.3B"  # You can change to a different NLLB checkpoint
+tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+model_nllb = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
 
-def detect_language(text):
-    lang_prediction = lang_detector.predict(text, k=1)
-    return lang_prediction[0][0].replace("__label__", "")  # Extract language code
+# Define target language
+target_lang = "spa_Latn"  # Target language code (Spanish in Latin script)
 
-def translate_text(text, target_lang):
-    # Detect source language
-    source_lang = detect_language(text)
-    
-    # Prepare inputs for translation
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
-    
-    # Perform translation
-    translated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id[target_lang])
-    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-    
-    return source_lang, translation
+# Create a translation pipeline
+translation_pipeline = pipeline(
+    "translation",
+    model=model_nllb,
+    tokenizer=tokenizer,
+    src_lang=input_lang,
+    tgt_lang=target_lang,
+    max_length=400
+)
 
-# Example usage
-input_text = "Bonjour, comment ça va ?"  # Example input text
-target_language = "eng"  # Target language code (e.g., "eng" for English)
-
-source_language, translated_text = translate_text(input_text, target_language)
-print(f"Source Language: {source_language}")
-print(f"Translated Text: {translated_text}")
+# Perform translation
+output = translation_pipeline(text)
+print("Translated Text:", output[0]['translation_text'])
