@@ -3,7 +3,6 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
 # Step 1: Language Detection
 def detect_language(text, fasttext_model_path):
-    """Detects the language of the input text using FastText."""
     model = fasttext.load_model(fasttext_model_path)
     predictions = model.predict(text, k=1)
     input_lang = predictions[0][0].replace("__label__", "")
@@ -11,12 +10,10 @@ def detect_language(text, fasttext_model_path):
 
 # Step 2: Map Detected Language to NLLB Code
 def map_language(input_lang, lang_mapping):
-    """Maps detected FastText language code to NLLB language code."""
     return lang_mapping.get(input_lang, None)
 
 # Step 3: Translation Pipeline Setup
 def setup_translation_pipeline(checkpoint, src_lang, tgt_lang):
-    """Sets up the translation pipeline using NLLB model."""
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
     model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
     return pipeline(
@@ -30,22 +27,20 @@ def setup_translation_pipeline(checkpoint, src_lang, tgt_lang):
 
 # Step 4: Perform Translation
 def translate_text(translation_pipeline, text):
-    """Translates text using the configured pipeline."""
     output = translation_pipeline(text)
     return output[0]["translation_text"] if output else None
 
-# Language Mapping Dictionary
+# Language Mapping Dictionary (including Japanese)
 lang_mapping = {
     "ar": "arb_Arab", "en": "eng_Latn", "es": "spa_Latn", "fr": "fra_Latn", 
-    "de": "deu_Latn", "hi": "hin_Deva", "zh": "zho_Hans", "ja": "jpn_Jpan"
-    # Add more mappings as needed
+    "de": "deu_Latn", "hi": "hin_Deva", "zh": "zho_Hans", "ja": "jpn_Jpan"  # Added Japanese
 }
 
 # Inputs
 fasttext_model_path = "/path/to/lid.176.bin"  # Update with your path
 nllb_checkpoint = "facebook/nllb-200-1.3B"
-text = "صباح الخير، الجو جميل اليوم والسماء صافية."
-target_lang = "spa_Latn"  # Spanish
+text = "おはようございます、今日は天気が良いです。"
+target_lang = "eng_Latn"  # English
 
 # Workflow
 print("Step 1: Detecting Language...")
