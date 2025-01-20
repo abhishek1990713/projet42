@@ -27,10 +27,18 @@ def setup_translation_pipeline(checkpoint, src_lang, tgt_lang):
 
 # Step 4: Perform Translation
 def translate_text(translation_pipeline, text):
-    output = translation_pipeline(text)
-    return output[0]["translation_text"] if output else None
+    try:
+        output = translation_pipeline(text)
+        if output:
+            return output[0]["translation_text"]
+        else:
+            print("Translation pipeline returned empty output.")
+            return None
+    except Exception as e:
+        print(f"Error during translation: {e}")
+        return None
 
-# Language Mapping Dictionary (including Japanese)
+# Language Mapping Dictionary
 lang_mapping = {
     "ar": "arb_Arab", "en": "eng_Latn", "es": "spa_Latn", "fr": "fra_Latn", 
     "de": "deu_Latn", "hi": "hin_Deva", "zh": "zho_Hans", "ja": "jpn_Jpan"  # Added Japanese
@@ -39,7 +47,7 @@ lang_mapping = {
 # Inputs
 fasttext_model_path = "/path/to/lid.176.bin"  # Update with your path
 nllb_checkpoint = "facebook/nllb-200-1.3B"
-text = "おはようございます、今日は天気が良いです。"
+text = "おはようございます、今日は天気が良いです。"  # Japanese text
 target_lang = "eng_Latn"  # English
 
 # Workflow
@@ -62,4 +70,4 @@ else:
     if translated_text:
         print(f"Translated Text: {translated_text}")
     else:
-        print("Error: Translation failed.")
+        print("Error: No translated text received.")
