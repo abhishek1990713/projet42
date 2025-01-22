@@ -1,73 +1,47 @@
-import fasttext
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from ultralytics import YOLO  # Import YOLO library
+import yaml  # Import yaml to handle the dataset.yaml file
 
-# Step 1: Language Detection
-def detect_language(text, fasttext_model_path):
-    model = fasttext.load_model(fasttext_model_path)
-    predictions = model.predict(text, k=1)
-    input_lang = predictions[0][0].replace("__label__", "")
-    return input_lang
+# Load the existing model
+existing_model_path = r"C:\CitiDev\Projects\YOLO_Increamental_learning\best.pt"
+model = YOLO(existing_model_path)
 
-# Step 2: Map Detected Language to NLLB Code
-def map_language(input_lang, lang_mapping):
-    return lang_mapping.get(input_lang, None)
+# Print the old classes
+print("Old Classes:", model.names)
 
-# Step 3: Translation Pipeline Setup
-def setup_translation_pipeline(checkpoint, src_lang, tgt_lang):
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-    model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
-    return pipeline(
-        "translation",
-        model=model,
-        tokenizer=tokenizer,
-        src_lang=src_lang,
-        tgt_lang=tgt_lang,
-        max_length=400
-    )
+# Get the old classes
+old_classes = list(model.names.values())
 
-# Step 4: Perform Translation
-def translate_text(translation_pipeline, text):
-    try:
-        output = translation_pipeline(text)
-        if output:
-            return output[0]["translation_text"]
-        else:
-            print("Translation pipeline returned empty output.")
-            return None
-    except Exception as e:
-        print(f"Error during translation: {e}")
-        return None
+# Define new classes to add
+new_classes = ["new_class1", "new_class2", "new_class3"]  # Replace with your actual new class names
 
-# Language Mapping Dictionary
-lang_mapping = {
-    "ar": "arb_Arab", "en": "eng_Latn", "es": "spa_Latn", "fr": "fra_Latn", 
-    "de": "deu_Latn", "hi": "hin_Deva", "zh": "zho_Hans", "ja": "jpn_Jpan"  # Added Japanese
-}
+# Combine old and new classes
+updated_classes = old_classes + new_classes
+print("Updated Classes:", updated_classes)
 
-# Inputs
-fasttext_model_path = "/path/to/lid.176.bin"  # Update with your path
-nllb_checkpoint = "facebook/nllb-200-1.3B"
-text = "おはようございます、今日は天気が良いです。"  # Japanese text
-target_lang = "eng_Latn"  # English
+# Update the model's class names
+model.names = {i: name for i, name in enumerate(updated_classes)}  # Directly assign updated class names to model
 
-# Workflow
-print("Step 1: Detecting Language...")
-detected_lang = detect_language(text, fasttext_model_path)
-print(f"Detected Language (FastText): {detected_lang}")
+# Print the updated class names
+print("Updated Model Names:", model.names)
 
-print("\nStep 2: Mapping Language Code...")
-mapped_lang = map_language(detected_lang, lang_mapping)
-if not mapped_lang:
-    print("Error: Detected language is not supported by NLLB.")
-else:
-    print(f"Mapped Language (NLLB): {mapped_lang}")
+# Optionally, update the number of classes in the dataset.yaml file
+dataset_yaml_path = r"C:\CitiDev\Projects\YOLO_Increamental_learning\update_yaml.yaml"
 
-    print("\nStep 3: Setting up Translation Pipeline...")
-    translation_pipeline = setup_translation_pipeline(nllb_checkpoint, mapped_lang, target_lang)
+# Load and read the YAML file to update the number of classes
+with open(dataset_yaml_path, "r") as f:
+    yaml_data = yaml.safe_load(f)
 
-    print("\nStep 4: Performing Translation...")
-    translated_text = translate_text(translation_pipeline, text)
-    if translated_text:
-        print(f"Translated Text: {translated_text}")
-    else:
-        print("Error: No translated text received.")
+# Update the number of classes (nc) in the YAML file
+yaml_data["nc"] = len(updated_classes)  # Set the number of classes to the length of updated_classes
+
+# Save the updated YAML file
+with open(dataset_yaml_path, "w") as f:
+    yaml.safe_dump(yaml_data, f)
+
+print(f"Updated YAML file saved to {dataset_yaml_path}")
+
+# Verify the updated YAML content
+with open(dataset_yaml_path, "r") as f:
+    updated_yaml_data = yaml.safe_load(f)
+    print("Updated YAML content:", updated_yaml_data)
+
