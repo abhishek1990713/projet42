@@ -1,47 +1,52 @@
-from ultralytics import YOLO  # Import YOLO library
-import yaml  # Import yaml to handle the dataset.yaml file
+import os
 
-# Load the existing model
-existing_model_path = r"C:\CitiDev\Projects\YOLO_Increamental_learning\best.pt"
-model = YOLO(existing_model_path)
+# Parameters
+PRETRAINED_WEIGHTS = "yolov5s.pt"  # Path to pre-trained weights (e.g., COCO-trained model or previous model)
+DATA_YAML = "data.yaml"           # Path to the dataset YAML file
+OUTPUT_DIR = "runs/train"         # Directory to save the results
+EPOCHS = 10                       # Number of training epochs
+BATCH_SIZE = 16                   # Batch size for training
+IMG_SIZE = 640                    # Image size for training and validation
+FREEZE_LAYERS = 10                # Number of layers to freeze during training (set to 0 if not needed)
 
-# Print the old classes
-print("Old Classes:", model.names)
+# Training command
+train_command = f"""
+python train.py --img {IMG_SIZE} \
+                --batch {BATCH_SIZE} \
+                --epochs {EPOCHS} \
+                --data {DATA_YAML} \
+                --weights {PRETRAINED_WEIGHTS} \
+                --project {OUTPUT_DIR}
+"""
 
-# Get the old classes
-old_classes = list(model.names.values())
+# Add optional layer freezing
+if FREEZE_LAYERS > 0:
+    train_command += f" --freeze {FREEZE_LAYERS}"
 
-# Define new classes to add
-new_classes = ["new_class1", "new_class2", "new_class3"]  # Replace with your actual new class names
+# Run training
+print("Starting YOLOv5 training...")
+os.system(train_command)
 
-# Combine old and new classes
-updated_classes = old_classes + new_classes
-print("Updated Classes:", updated_classes)
+# Validate the model after training
+BEST_WEIGHTS_PATH = os.path.join(OUTPUT_DIR, "exp", "weights", "best.pt")
+print("Validating the model...")
+validate_command = f"""
+python val.py --weights {BEST_WEIGHTS_PATH} \
+              --data {DATA_YAML} \
+              --img {IMG_SIZE}
+"""
+os.system(validate_command)
 
-# Update the model's class names
-model.names = {i: name for i, name in enumerate(updated_classes)}  # Directly assign updated class names to model
+# Perform inference on test images
+INFERENCE_SOURCE = "data/test/images"  # Path to a folder containing test images
+print("Running inference on test images...")
+inference_command = f"""
+python detect.py --weights {BEST_WEIGHTS_PATH} \
+                 --source {INFERENCE_SOURCE} \
+                 --img {IMG_SIZE}
+"""
+os.system(inference_command)
 
-# Print the updated class names
-print("Updated Model Names:", model.names)
+print("Incremental training, validation, and inference complete.")
 
-# Optionally, update the number of classes in the dataset.yaml file
-dataset_yaml_path = r"C:\CitiDev\Projects\YOLO_Increamental_learning\update_yaml.yaml"
-
-# Load and read the YAML file to update the number of classes
-with open(dataset_yaml_path, "r") as f:
-    yaml_data = yaml.safe_load(f)
-
-# Update the number of classes (nc) in the YAML file
-yaml_data["nc"] = len(updated_classes)  # Set the number of classes to the length of updated_classes
-
-# Save the updated YAML file
-with open(dataset_yaml_path, "w") as f:
-    yaml.safe_dump(yaml_data, f)
-
-print(f"Updated YAML file saved to {dataset_yaml_path}")
-
-# Verify the updated YAML content
-with open(dataset_yaml_path, "r") as f:
-    updated_yaml_data = yaml.safe_load(f)
-    print("Updated YAML content:", updated_yaml_data)
 
