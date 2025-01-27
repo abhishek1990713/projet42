@@ -1,4 +1,5 @@
 
+
 from ultralytics import YOLO
 from PIL import Image
 from paddleocr import PaddleOCR
@@ -29,6 +30,7 @@ ocr = PaddleOCR(
 
 # Initialize translation models
 lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
+
 
 def process_dl_information(input_file_path):
     """Process driving license information using YOLO and OCR."""
@@ -62,9 +64,9 @@ def process_dl_information(input_file_path):
 
                 # Custom formatting for translation
                 if label == "DOB":
-                    translated_text = format_dob_translation(extracted_text, translated_text)
+                    translated_text = format_dob_translation(extracted_text)
                 elif label == "Expiration date":
-                    translated_text = format_expiration_translation(extracted_text, translated_text)
+                    translated_text = format_expiration_translation(extracted_text)
 
                 output.append(f"Translated {label}: {translated_text}")
 
@@ -84,7 +86,7 @@ def process_dl_information(input_file_path):
     return output
 
 
-def format_dob_translation(original_text, translated_text):
+def format_dob_translation(original_text):
     """Format the DOB translation."""
     # Extract the original Japanese date
     match = re.search(r"昭和(\d{1,2})年(\d{1,2})月(\d{1,2})日", original_text)
@@ -92,11 +94,11 @@ def format_dob_translation(original_text, translated_text):
         year = 1926 + int(match.group(1))  # Convert Showa year to Gregorian year
         month = int(match.group(2))
         day = int(match.group(3))
-        return f"Born {month}/{day}/{year}"
-    return translated_text
+        return f"Born May {month}/{day}/{year}"
+    return "DOB not formatted properly."
 
 
-def format_expiration_translation(original_text, translated_text):
+def format_expiration_translation(original_text):
     """Format the Expiration date translation."""
     # Extract the original Japanese expiration date
     match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", original_text)
@@ -105,7 +107,7 @@ def format_expiration_translation(original_text, translated_text):
         month = int(match.group(2))
         day = int(match.group(3))
         return f"Valid until {month}/{day}/{year}"
-    return translated_text
+    return "Expiration date not formatted properly."
 
 
 # Test the implementation
