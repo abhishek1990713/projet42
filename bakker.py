@@ -30,30 +30,6 @@ ocr = PaddleOCR(
 # Initialize translation models
 lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
 
-
-def parse_date_from_japanese(text):
-    """
-    Parse a date from Japanese text.
-    Handles formats like 昭和61年5月1日生 or 2024年06月01日.
-    Converts Japanese eras into Gregorian years.
-    """
-    # Convert Japanese eras (e.g., 昭和, 平成, 令和) to Gregorian years
-    eras = {"昭和": 1925, "平成": 1988, "令和": 2018}
-    match = re.search(r"(昭和|平成|令和)(\d{1,2})年(\d{1,2})月(\d{1,2})日", text)
-    if match:
-        era, year, month, day = match.groups()
-        year = eras[era] + int(year)
-        return f"Born {month} {day}, {year}"
-
-    # Handle Gregorian dates
-    match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
-    if match:
-        year, month, day = match.groups()
-        return f"{year}-{month}-{day}"
-    
-    return text
-
-
 def process_dl_information(input_file_path):
     """Process driving license information using YOLO and OCR."""
     model = YOLO(DRIVING_LICENSE_MODEL_PATH)
@@ -77,24 +53,22 @@ def process_dl_information(input_file_path):
                 else ""
             )
 
-            logging.info(f"Detected {label}: {extracted_text}")
+            # Append the detected label and original text
             output.append(f"Detected {label}: {extracted_text}")
 
-            # Translate the text if the label is "DOB" or "Expiration date"
+            # Translate and format the text for "DOB" or "Expiration date"
             if label in ["DOB", "Expiration date"]:
                 translated_text = translate_text([extracted_text], lang_model, translation_pipeline, target_language="en")[0]
+
+                # Custom formatting for translation
                 if label == "DOB":
-                    # Parse and reformat the date
-                    parsed_date = parse_date_from_japanese(extracted_text)
-                    translated_text = f"Born {parsed_date}"
+                    translated_text = format_dob_translation(extracted_text, translated_text)
                 elif label == "Expiration date":
-                    parsed_date = parse_date_from_japanese(extracted_text)
-                    translated_text = f"Valid until {parsed_date}"
-                
-                logging.info(f"Translated {label}: {translated_text}")
+                    translated_text = format_expiration_translation(extracted_text, translated_text)
+
                 output.append(f"Translated {label}: {translated_text}")
 
-            # If label is "Expiration date", validate year
+            # If label is "Expiration date", validate the year
             if label == "Expiration date":
                 year_match = re.search(r"\d{4}年", extracted_text)
                 if year_match:
@@ -108,6 +82,30 @@ def process_dl_information(input_file_path):
                     output.append("Year not found in 'Expiration date' text.")
 
     return output
+
+
+def format_dob_translation(original_text, translated_text):
+    """Format the DOB translation."""
+    # Extract the original Japanese date
+    match = re.search(r"昭和(\d{1,2})年(\d{1,2})月(\d{1,2})日", original_text)
+    if match:
+        year = 1926 + int(match.group(1))  # Convert Showa year to Gregorian year
+        month = int(match.group(2))
+        day = int(match.group(3))
+        return f"Born {month}/{day}/{year}"
+    return translated_text
+
+
+def format_expiration_translation(original_text, translated_text):
+    """Format the Expiration date translation."""
+    # Extract the original Japanese expiration date
+    match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", original_text)
+    if match:
+        year = int(match.group(1))
+        month = int(match.group(2))
+        day = int(match.group(3))
+        return f"Valid until {month}/{day}/{year}"
+    return translated_text
 
 
 # Test the implementation
