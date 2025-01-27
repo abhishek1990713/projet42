@@ -1,4 +1,5 @@
 
+
 from ultralytics import YOLO
 from PIL import Image
 from paddleocr import PaddleOCR
@@ -6,6 +7,7 @@ import numpy as np
 import re
 import logging
 from translation import initialize_models, translate_text
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,18 +64,45 @@ def process_dl_information(input_file_path):
                 logging.info(f"Translated {label}: {translated_text}")
                 output.append(f"Translated {label}: {translated_text}")
 
-            # If label is "Expiration date", validate year
-            if label == "Expiration date":
-                year_match = re.search(r"\d{4}年", extracted_text)
-                if year_match:
-                    year = int(year_match.group(0).replace("年", ""))
-                    output.append(f"Extracted Year: {year}")
-                    if MIN_EXPIRE_YEAR <= year <= MAX_EXPIRE_YEAR:
-                        output.append(f"Year {year} is within the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                # Add validation for DOB and Expiration date
+                if label == "DOB":
+                    # Extract year, month, and day from the DOB text
+                    dob_match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", extracted_text)
+                    if dob_match:
+                        year, month, day = int(dob_match.group(1)), int(dob_match.group(2)), int(dob_match.group(3))
+                        # Validate DOB against current year and month
+                        current_year = datetime.now().year
+                        if year <= current_year:
+                            output.append(f"DOB is valid: {year}-{month}-{day}")
+                        else:
+                            output.append(f"DOB is invalid: Year {year} is in the future.")
                     else:
-                        output.append(f"Year {year} is outside the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
-                else:
-                    output.append("Year not found in 'Expiration date' text.")
+                        output.append("DOB format is invalid.")
+
+                elif label == "Expiration date":
+                    # Extract year and month from the expiration date
+                    expire_match = re.search(r"(\d{4})年(\d{1,2})月", extracted_text)
+                    if expire_match:
+                        year, month = int(expire_match.group(1)), int(expire_match.group(2))
+                        current_date = datetime.now()
+                        expiration_date = datetime(year, month, 1)
+
+                        # Validate expiration date against valid range
+                        if MIN_EXPIRE_YEAR <= year <= MAX_EXPIRE_YEAR:
+                            if (year == MIN_EXPIRE_YEAR and month >= current_date.month) or year > MIN_EXPIRE_YEAR:
+                                output.append(f"Expiration date is valid: {year}-{month}")
+                            else:
+                                output.append(f"Expiration date month is too early: {year}-{month}")
+                            
+                            # Check if expiration date has passed
+                            if expiration_date < current_date:
+                                output.append(f"Expiration date {year}-{month} has passed.")
+                            else:
+                                output.append(f"Expiration date {year}-{month} is still valid.")
+                        else:
+                            output.append(f"Expiration date year {year} is out of the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                    else:
+                        output.append("Expiration date format is invalid.")
 
     return output
 
@@ -83,3 +112,4 @@ if __name__ == "__main__":
     input_file_path = r"C:\CitiDev\Japan_pipeline\data_set\japan_test_image\6f7rch30 4.png"
     result = process_dl_information(input_file_path)
     print("\n".join(result))
+
