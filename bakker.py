@@ -1,72 +1,117 @@
 
-import fasttext
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from ultralytics import YOLO
+from PIL import Image
+from paddleocr import PaddleOCR
+import numpy as np
+import re
 import logging
+from translation import initialize_models, translate_text
 
 # Configure logging
-LOG_FILE = "translation_log.txt"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
+logging.basicConfig(level=logging.INFO)
+
+# Constants
+DRIVING_LICENSE_MODEL_PATH = r"C:\AS34751\Downloads\dl_information.pt"
+LANG_MODEL_PATH = r"C:\CitiDev\language_prediction\amz12\lid.176.bin"
+TRANSLATION_MODEL_PATH = r"C:\CitiDev\language_prediction\m2m"
+MIN_EXPIRE_YEAR = 2024
+MAX_EXPIRE_YEAR = 2032
+
+# Initialize PaddleOCR
+ocr = PaddleOCR(
+    lang="japan",
+    use_angle_cls=False,
+    use_gpu=False,
+    det=True,
+    rec=True,
+    cls=False
 )
-file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-logging.getLogger().addHandler(file_handler)
 
-def log_message(message):
-    logging.info(message)
-    print(message)
+# Initialize translation models
+lang_model, translation_pipeline = initialize_models(LANG_MODEL_PATH, TRANSLATION_MODEL_PATH)
 
-def initialize_models(lang_model_path, translation_model_path):
-    """Initialize language detection and translation models."""
-    log_message("Initializing models...")
-    try:
-        # Load language detection model
-        lang_model = fasttext.load_model(lang_model_path)
-        log_message("Language model loaded successfully.")
-    except Exception as e:
-        log_message(f"Error loading FastText model: {e}")
-        raise RuntimeError(f"Error loading FastText model: {e}")
 
-    try:
-        # Load translation model and tokenizer
-        translation_model = AutoModelForSeq2SeqLM.from_pretrained(translation_model_path)
-        tokenizer = AutoTokenizer.from_pretrained(translation_model_path)
-        translation_pipeline = pipeline(
-            "translation",
-            model=translation_model,
-            tokenizer=tokenizer,
-            max_length=400,
-        )
-        log_message("Translation model and tokenizer loaded successfully.")
-    except Exception as e:
-        log_message(f"Error loading Transformers model: {e}")
-        raise RuntimeError(f"Error loading Transformers model: {e}")
+def parse_date_from_japanese(text):
+    """
+    Parse a date from Japanese text.
+    Handles formats like 昭和61年5月1日生 or 2024年06月01日.
+    Converts Japanese eras into Gregorian years.
+    """
+    # Convert Japanese eras (e.g., 昭和, 平成, 令和) to Gregorian years
+    eras = {"昭和": 1925, "平成": 1988, "令和": 2018}
+    match = re.search(r"(昭和|平成|令和)(\d{1,2})年(\d{1,2})月(\d{1,2})日", text)
+    if match:
+        era, year, month, day = match.groups()
+        year = eras[era] + int(year)
+        return f"Born {month} {day}, {year}"
 
-    return lang_model, translation_pipeline
+    # Handle Gregorian dates
+    match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
+    if match:
+        year, month, day = match.groups()
+        return f"{year}-{month}-{day}"
+    
+    return text
 
-def detect_language(text, lang_model):
-    """Detect the language of a given text."""
-    try:
-        prediction = lang_model.predict(text.strip().replace("\n", ""))
-        log_message(f"Detected language: {prediction[0][0]} with confidence: {prediction[1][0]}")
-        return prediction[0][0].replace("__label__", ""), prediction[1][0]
-    except Exception as e:
-        log_message(f"Language detection failed: {e}")
-        raise RuntimeError(f"Language detection failed: {e}")
 
-def translate_text(details, lang_model, translation_pipeline, target_language="en"):
-    """Translate a list of text segments to the target language."""
-    translated_details = []
-    for detail in details:
-        try:
-            detected_language, confidence = detect_language(detail, lang_model)
-            output = translation_pipeline(detail, src_lang=detected_language, tgt_lang=target_language)
-            translated_text = output[0]["translation_text"]
-            log_message(f"Translated: {detail} -> {translated_text}")
-            translated_details.append(translated_text)
-        except Exception as e:
-            log_message(f"Error translating detail: {detail}. Error: {e}")
-            translated_details.append(f"Error: {str(e)}")
-    return translated_details
+def process_dl_information(input_file_path):
+    """Process driving license information using YOLO and OCR."""
+    model = YOLO(DRIVING_LICENSE_MODEL_PATH)
+    results = model(input_file_path)
+    input_image = Image.open(input_file_path)
+    output = []
+
+    for result in results:
+        boxes = result.boxes
+        for box in boxes:
+            cls_id = int(box.cls[0])
+            label = result.names[cls_id]
+            bbox = box.xyxy[0].tolist()
+            cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+            cropped_image_np = np.array(cropped_image)
+
+            result_texts = ocr.ocr(cropped_image_np, cls=False)
+            extracted_text = (
+                " ".join([text[1][0] for text in result_texts[0]])
+                if result_texts and result_texts[0]
+                else ""
+            )
+
+            logging.info(f"Detected {label}: {extracted_text}")
+            output.append(f"Detected {label}: {extracted_text}")
+
+            # Translate the text if the label is "DOB" or "Expiration date"
+            if label in ["DOB", "Expiration date"]:
+                translated_text = translate_text([extracted_text], lang_model, translation_pipeline, target_language="en")[0]
+                if label == "DOB":
+                    # Parse and reformat the date
+                    parsed_date = parse_date_from_japanese(extracted_text)
+                    translated_text = f"Born {parsed_date}"
+                elif label == "Expiration date":
+                    parsed_date = parse_date_from_japanese(extracted_text)
+                    translated_text = f"Valid until {parsed_date}"
+                
+                logging.info(f"Translated {label}: {translated_text}")
+                output.append(f"Translated {label}: {translated_text}")
+
+            # If label is "Expiration date", validate year
+            if label == "Expiration date":
+                year_match = re.search(r"\d{4}年", extracted_text)
+                if year_match:
+                    year = int(year_match.group(0).replace("年", ""))
+                    output.append(f"Extracted Year: {year}")
+                    if MIN_EXPIRE_YEAR <= year <= MAX_EXPIRE_YEAR:
+                        output.append(f"Year {year} is within the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                    else:
+                        output.append(f"Year {year} is outside the valid range ({MIN_EXPIRE_YEAR}-{MAX_EXPIRE_YEAR}).")
+                else:
+                    output.append("Year not found in 'Expiration date' text.")
+
+    return output
+
+
+# Test the implementation
+if __name__ == "__main__":
+    input_file_path = r"C:\CitiDev\Japan_pipeline\data_set\japan_test_image\6f7rch30 4.png"
+    result = process_dl_information(input_file_path)
+    print("\n".join(result))
