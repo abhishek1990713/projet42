@@ -1,99 +1,79 @@
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Upload</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 50px;
-        }
-        .container {
-            width: 50%;
-            margin: auto;
-            padding: 20px;
-            border: 1px solid #ccc;
-            border-radius: 10px;
-            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        input[type="file"] {
-            margin: 20px 0;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: blue;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            border-radius: 5px;
-        }
-        button:hover {
-            background-color: darkblue;
-        }
-        .output-box {
-            margin-top: 20px;
-            padding: 15px;
-            border: 2px solid #000;
-            border-radius: 5px;
-            min-height: 50px;
-            width: 80%;
-            margin-left: auto;
-            margin-right: auto;
-            text-align: center;
-            background-color: #f9f9f9;
-            font-weight: bold;
-            word-wrap: break-word;
-        }
-    </style>
-</head>
-<body>
+import logging
+import os
+import asyncio
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from concurrent.futures import ThreadPoolExecutor
+import uvicorn
 
-    <div class="container">
-        <h2>Upload File</h2>
-        <input type="file" id="fileInput" accept="image/*,application/pdf">
-        <button onclick="uploadFile()">Upload</button>
-        <div id="output" class="output-box">Result will appear here</div>
-    </div>
+# Initialize FastAPI app
+app = FastAPI()
 
-    <script>
-        async function uploadFile() {
-            const fileInput = document.getElementById("fileInput");
-            const outputBox = document.getElementById("output");
+# Enable CORS (Optional, useful if accessing from another domain)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (for testing)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-            if (fileInput.files.length === 0) {
-                alert("Please select a file!");
-                return;
-            }
+# Serve static files (for CSS, JS, images if needed)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-            let formData = new FormData();
-            formData.append("file", fileInput.files[0]);
+# Configure logging
+logging.basicConfig(
+    filename="api_processing.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger()
 
-            try {
-                outputBox.innerText = "Processing...";
-                let response = await fetch("/process-file/", {
-                    method: "POST",
-                    body: formData
-                });
 
-                let result = await response.json();
+# Dummy file processing function (Replace with actual logic)
+def process_input_file(file_path):
+    return f"Processed file: {file_path}"
 
-                console.log("Server Response:", result);
 
-                if (response.ok) {
-                    outputBox.innerText = "Result: " + JSON.stringify(result.result, null, 2);
-                } else {
-                    outputBox.innerText = "Error: " + result.detail;
-                }
-            } catch (error) {
-                outputBox.innerText = "Request failed! See console.";
-                console.error("Fetch Error:", error);
-            }
-        }
-    </script>
+# Serve index.html
+@app.get("/", response_class=HTMLResponse)
+async def serve_html():
+    with open("index.html", "r", encoding="utf-8") as file:
+        return HTMLResponse(content=file.read(), status_code=200)
 
-</body>
-</html>
+
+# API Endpoint to process uploaded files
+@app.post("/process-file/")
+async def process_file(file: UploadFile = File(...)):
+    try:
+        # Save uploaded file temporarily
+        file_path = f"temp_{file.filename}"
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        logger.info(f"Received file: {file.filename}")
+
+        # Process file asynchronously
+        result = await process_file_async(file_path)
+
+        # Clean up temporary file
+        os.remove(file_path)
+
+        return {"status": "success", "result": result}
+
+    except Exception as e:
+        logger.error(f"Error processing file {file.filename}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred during processing.")
+
+
+async def process_file_async(file_path):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, process_input_file, file_path)
+    return result
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8888, reload=True)
