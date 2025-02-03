@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,6 +46,7 @@
             text-align: center;
             background-color: #f9f9f9;
             font-weight: bold;
+            word-wrap: break-word;
         }
     </style>
 </head>
@@ -74,20 +74,23 @@
 
             try {
                 outputBox.innerText = "Processing...";
-                let response = await fetch("http://127.0.0.1:8888/process-file/", {
+                let response = await fetch("/process-file/", {
                     method: "POST",
                     body: formData
                 });
 
                 let result = await response.json();
+
+                console.log("Server Response:", result);
+
                 if (response.ok) {
                     outputBox.innerText = "Result: " + JSON.stringify(result.result, null, 2);
                 } else {
                     outputBox.innerText = "Error: " + result.detail;
                 }
             } catch (error) {
-                outputBox.innerText = "Request failed!";
-                console.error("Error:", error);
+                outputBox.innerText = "Request failed! See console.";
+                console.error("Fetch Error:", error);
             }
         }
     </script>
