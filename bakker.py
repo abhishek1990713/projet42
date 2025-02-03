@@ -1,28 +1,14 @@
 
-import logging
 import os
 import asyncio
+import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from concurrent.futures import ThreadPoolExecutor
 import uvicorn
+from concurrent.futures import ThreadPoolExecutor
 
 # Initialize FastAPI app
 app = FastAPI()
-
-# Enable CORS (Optional, useful if accessing from another domain)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (for testing)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Serve static files (for CSS, JS, images if needed)
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Configure logging
 logging.basicConfig(
@@ -38,11 +24,15 @@ def process_input_file(file_path):
     return f"Processed file: {file_path}"
 
 
-# Serve index.html
+# Serve index.html when user visits the root URL
 @app.get("/", response_class=HTMLResponse)
 async def serve_html():
-    with open("index.html", "r", encoding="utf-8") as file:
-        return HTMLResponse(content=file.read(), status_code=200)
+    try:
+        with open("index.html", "r", encoding="utf-8") as file:
+            return HTMLResponse(content=file.read(), status_code=200)
+    except Exception as e:
+        logger.error(f"Error serving HTML file: {str(e)}")
+        return HTMLResponse(content="<h1>Error loading page</h1>", status_code=500)
 
 
 # API Endpoint to process uploaded files
@@ -69,6 +59,7 @@ async def process_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="An error occurred during processing.")
 
 
+# Run processing in a background thread
 async def process_file_async(file_path):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, process_input_file, file_path)
