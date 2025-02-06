@@ -1,10 +1,9 @@
-
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import fitz  # PyMuPDF
-import pandas as pd  # For DataFrame
+import pandas as pd  # For DataFrame and Excel-like output
 
 # Import functions for classification and processing
 from yolo_classification_test import predict_image_class
@@ -36,17 +35,25 @@ def create_dataframe(title, data):
     return df
 
 
-def print_dataframe(classification_df, details_df):
-    """Prints the DataFrames to the console in a table format."""
-    print("\nClassification Result:")
-    print(classification_df.to_string(index=False))
+def save_to_excel(classification_df, details_df, output_filename):
+    """Saves classification and details DataFrames to an Excel file."""
+    with pd.ExcelWriter(output_filename) as writer:
+        classification_df.to_excel(writer, sheet_name="Classification Result", index=False)
+        details_df.to_excel(writer, sheet_name="Details", index=False)
 
-    print("\nDetails:")
-    print(details_df.to_string(index=False))
+
+def read_excel(output_filename):
+    """Reads the Excel file and returns its content as DataFrames."""
+    try:
+        excel_data = pd.read_excel(output_filename, sheet_name=None)
+        return excel_data
+    except Exception as e:
+        logger.exception(f"Failed to read Excel file {output_filename}: {str(e)}")
+        return None
 
 
 def process_image_pipeline(image_path, timeout=1800):
-    """Processes an image and returns classification and details as DataFrames."""
+    """Processes an image, saves classification and details in an Excel file, then reads and returns it."""
     try:
         logger.info(f"Processing started for image: {image_path}")
 
@@ -87,12 +94,17 @@ def process_image_pipeline(image_path, timeout=1800):
                 classification_df = create_dataframe("Classification Result", classification_output)
                 details_df = create_dataframe("Details", details_output)
 
-                # Print the DataFrames to the console
-                print_dataframe(classification_df, details_df)
-                return classification_df, details_df
+                # Save DataFrames to Excel
+                output_filename = f"{os.path.splitext(os.path.basename(image_path))[0]}_result.xlsx"
+                save_to_excel(classification_df, details_df, output_filename)
+                logger.info(f"Results saved to: {output_filename}")
+
+                # Read and return the Excel content
+                excel_data = read_excel(output_filename)
+                return excel_data
 
             else:
-                return create_dataframe("Classification Result", "Image classification failed."), None
+                return {"Error": "Image classification failed."}, None
 
         with ThreadPoolExecutor() as executor:
             future = executor.submit(process)
@@ -103,8 +115,27 @@ def process_image_pipeline(image_path, timeout=1800):
 
     except TimeoutError:
         logger.error(f"Processing timed out for image: {image_path}")
-        return create_dataframe("Error", "Processing timed out."), None
+        classification_df = create_dataframe("Error", "Processing timed out.")
+        details_df = pd.DataFrame([["Error", "Timeout"]], columns=["Field", "Value"])
+        save_to_excel(classification_df, details_df, "timeout_result.xlsx")
+        excel_data = read_excel("timeout_result.xlsx")
+        return excel_data
 
     except Exception as e:
         logger.exception(f"An error occurred while processing {image_path}: {str(e)}")
-        return create_dataframe("Error", f"An error occurred: {str(e)}"), None
+        classification_df = create_dataframe("Error", f"An error occurred: {str(e)}")
+        details_df = pd.DataFrame([["Error", str(e)]], columns=["Field", "Value"])
+        save_to_excel(classification_df, details_df, "error_result.xlsx")
+        excel_data = read_excel("error_result.xlsx")
+        return excel_data
+
+
+# Example usage:
+image_path = "/path/to/your/image.png"
+output = process_image_pipeline(image_path)
+
+# Display the returned output
+if output:
+    for sheet_name, sheet_data in output.items():
+        print(f"\n{sheet_name} Sheet:")
+        print(sheet_data.to_string(index=False))  # Print each sheet content
