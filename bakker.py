@@ -4,7 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import fitz  # PyMuPDF
-import pandas as pd  # For DataFrame
+import pandas as pd  # For DataFrame and Excel export
 
 # Import functions for classification and processing
 from yolo_classification_test import predict_image_class
@@ -26,17 +26,22 @@ logger = logging.getLogger()
 
 
 def create_dataframe(title, data):
-    """Creates and displays a Pandas DataFrame from a dictionary or string data."""
+    """Creates a Pandas DataFrame from a dictionary or string data."""
     if isinstance(data, dict):
         df = pd.DataFrame(list(data.items()), columns=["Field", "Value"])
     elif isinstance(data, str):
         df = pd.DataFrame([["Result", data]], columns=["Field", "Value"])
     else:
         df = pd.DataFrame([["Result", "Invalid data type"]], columns=["Field", "Value"])
-    
-    print(f"\n--- {title} ---")
-    print(df.to_string(index=False))  # Display as a proper table
     return df
+
+
+def save_to_excel(classification_df, details_df, output_path="image_processing_result.xlsx"):
+    """Saves classification and details DataFrames to an Excel file."""
+    with pd.ExcelWriter(output_path) as writer:
+        classification_df.to_excel(writer, sheet_name="Classification Result", index=False)
+        details_df.to_excel(writer, sheet_name="Details", index=False)
+    print(f"Results saved to {output_path}")
 
 
 def process_image_pipeline(image_path, timeout=1800):
@@ -77,10 +82,12 @@ def process_image_pipeline(image_path, timeout=1800):
                 else:
                     return create_dataframe("Classification Result", "Class not recognized for further processing."), None
 
-                # Create and display DataFrames for classification and details
+                # Create DataFrames for classification and details
                 classification_df = create_dataframe("Classification Result", classification_output)
                 details_df = create_dataframe("Details", details_output)
 
+                # Save DataFrames to Excel
+                save_to_excel(classification_df, details_df)
                 return classification_df, details_df
 
             else:
