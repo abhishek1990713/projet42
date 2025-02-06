@@ -1,3 +1,4 @@
+
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -90,9 +91,14 @@ def process_image_pipeline(image_path, timeout=1800):
                 else:
                     return create_dataframe("Classification Result", "Class not recognized for further processing."), None
 
-                # Create DataFrames for classification and details
+                # Create DataFrames for classification
                 classification_df = create_dataframe("Classification Result", classification_output)
-                details_df = create_dataframe("Details", details_output)
+
+                # If details_output is a string, split it into separate rows for better structure
+                if isinstance(details_output, str):
+                    details_output = {"Result": [details_output]}
+                # Create a DataFrame for details
+                details_df = pd.DataFrame(details_output)
 
                 # Save DataFrames to Excel
                 output_filename = f"{os.path.splitext(os.path.basename(image_path))[0]}_result.xlsx"
@@ -134,7 +140,7 @@ def process_image_pipeline(image_path, timeout=1800):
 image_path = "/path/to/your/image.png"
 output = process_image_pipeline(image_path)
 
-# Display the returned output
+# Display the returned output as tables
 if output:
     for sheet_name, sheet_data in output.items():
         print(f"\n{sheet_name} Sheet:")
