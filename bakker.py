@@ -4,7 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import fitz  # PyMuPDF
-from prettytable import PrettyTable  # For table formatting
+import pandas as pd  # For DataFrame
 
 # Import functions for classification and processing
 from yolo_classification_test import predict_image_class
@@ -25,25 +25,20 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 
-def create_table(title, data):
-    """Creates a table from a dictionary or string data and returns it as a string."""
-    table = PrettyTable()
-    table.title = title
-    table.field_names = ["Field", "Value"]
-
+def create_dataframe(title, data):
+    """Creates a Pandas DataFrame from a dictionary or string data and returns it."""
     if isinstance(data, dict):
-        for key, value in data.items():
-            table.add_row([key, value])
+        df = pd.DataFrame(list(data.items()), columns=["Field", "Value"])
     elif isinstance(data, str):
-        table.add_row(["Result", data])
+        df = pd.DataFrame([["Result", data]], columns=["Field", "Value"])
     else:
-        table.add_row(["Result", "Invalid data type"])
-
-    return table.get_string()
+        df = pd.DataFrame([["Result", "Invalid data type"]], columns=["Field", "Value"])
+    
+    return title, df
 
 
 def process_image_pipeline(image_path, timeout=1800):
-    """Processes an image and returns classification and details as tables."""
+    """Processes an image and returns classification and details as DataFrames."""
     try:
         logger.info(f"Processing started for image: {image_path}")
 
@@ -59,35 +54,35 @@ def process_image_pipeline(image_path, timeout=1800):
                 if classification_result == 'Driving License':
                     process_result = process_dl_image(image_path)
                     if process_result == 'Image is not good.':
-                        return create_table("Classification Result", "Image is not good."), None
+                        return create_dataframe("Classification Result", "Image is not good."), None
                     details_output = process_dl_information(image_path)
                 
                 elif classification_result == 'Passport':
                     process_result = process_passport_image(image_path)
                     if process_result == 'Image is not good.':
-                        return create_table("Classification Result", "Image is not good."), None
+                        return create_dataframe("Classification Result", "Image is not good."), None
                     details_output = process_passport_information(image_path)
 
                 elif classification_result == 'Residence Card':
                     process_result = process_rc_image(image_path)
                     if process_result == 'Image is not good.':
-                        return create_table("Classification Result", "Image is not good."), None
+                        return create_dataframe("Classification Result", "Image is not good."), None
                     details_output = process_RC_information(image_path)
 
                 elif classification_result == 'MNC':
                     details_output = process_MNC_information(image_path)
 
                 else:
-                    return create_table("Classification Result", "Class not recognized for further processing."), None
+                    return create_dataframe("Classification Result", "Class not recognized for further processing."), None
 
-                # Create tables for classification and details
-                classification_table = create_table("Classification Result", classification_output)
-                details_table = create_table("Details", details_output)
+                # Create DataFrames for classification and details
+                classification_df = create_dataframe("Classification Result", classification_output)
+                details_df = create_dataframe("Details", details_output)
 
-                return classification_table, details_table
+                return classification_df, details_df
 
             else:
-                return create_table("Classification Result", "Image classification failed."), None
+                return create_dataframe("Classification Result", "Image classification failed."), None
 
         with ThreadPoolExecutor() as executor:
             future = executor.submit(process)
@@ -98,9 +93,8 @@ def process_image_pipeline(image_path, timeout=1800):
 
     except TimeoutError:
         logger.error(f"Processing timed out for image: {image_path}")
-        return create_table("Error", "Processing timed out."), None
+        return create_dataframe("Error", "Processing timed out."), None
 
     except Exception as e:
         logger.exception(f"An error occurred while processing {image_path}: {str(e)}")
-        return create_table("Error", f"An error occurred: {str(e)}"), None
-
+        return create_dataframe("Error", f"An error occurred: {str(e)}"), None
