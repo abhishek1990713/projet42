@@ -94,9 +94,10 @@ def process_image_pipeline(image_path, timeout=1800):
                 # Create DataFrames for classification
                 classification_df = create_dataframe("Classification Result", classification_output)
 
-                # If details_output is a string, split it into separate rows for better structure
+                # Ensure details_output is structured as a dictionary to create a proper DataFrame
                 if isinstance(details_output, str):
-                    details_output = {"Result": [details_output]}
+                    details_output = {"Result": [details_output]}  # If it's a string, wrap it as a list
+
                 # Create a DataFrame for details
                 details_df = pd.DataFrame(details_output)
 
