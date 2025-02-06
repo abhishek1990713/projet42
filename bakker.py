@@ -4,7 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import fitz  # PyMuPDF
-import pandas as pd  # For DataFrame and Excel export
+import pandas as pd  # For DataFrame
 
 # Import functions for classification and processing
 from yolo_classification_test import predict_image_class
@@ -36,12 +36,13 @@ def create_dataframe(title, data):
     return df
 
 
-def save_to_excel(classification_df, details_df, output_path="image_processing_result.xlsx"):
-    """Saves classification and details DataFrames to an Excel file."""
-    with pd.ExcelWriter(output_path) as writer:
-        classification_df.to_excel(writer, sheet_name="Classification Result", index=False)
-        details_df.to_excel(writer, sheet_name="Details", index=False)
-    print(f"Results saved to {output_path}")
+def print_dataframe(classification_df, details_df):
+    """Prints the DataFrames to the console in a table format."""
+    print("\nClassification Result:")
+    print(classification_df.to_string(index=False))
+
+    print("\nDetails:")
+    print(details_df.to_string(index=False))
 
 
 def process_image_pipeline(image_path, timeout=1800):
@@ -86,8 +87,8 @@ def process_image_pipeline(image_path, timeout=1800):
                 classification_df = create_dataframe("Classification Result", classification_output)
                 details_df = create_dataframe("Details", details_output)
 
-                # Save DataFrames to Excel
-                save_to_excel(classification_df, details_df)
+                # Print the DataFrames to the console
+                print_dataframe(classification_df, details_df)
                 return classification_df, details_df
 
             else:
