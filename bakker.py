@@ -26,7 +26,7 @@ logger = logging.getLogger()
 
 
 def create_dataframe(title, data):
-    """Creates a Pandas DataFrame from a dictionary or string data and returns it."""
+    """Creates and displays a Pandas DataFrame from a dictionary or string data."""
     if isinstance(data, dict):
         df = pd.DataFrame(list(data.items()), columns=["Field", "Value"])
     elif isinstance(data, str):
@@ -34,7 +34,9 @@ def create_dataframe(title, data):
     else:
         df = pd.DataFrame([["Result", "Invalid data type"]], columns=["Field", "Value"])
     
-    return title, df
+    print(f"\n--- {title} ---")
+    print(df.to_string(index=False))  # Display as a proper table
+    return df
 
 
 def process_image_pipeline(image_path, timeout=1800):
@@ -75,7 +77,7 @@ def process_image_pipeline(image_path, timeout=1800):
                 else:
                     return create_dataframe("Classification Result", "Class not recognized for further processing."), None
 
-                # Create DataFrames for classification and details
+                # Create and display DataFrames for classification and details
                 classification_df = create_dataframe("Classification Result", classification_output)
                 details_df = create_dataframe("Details", details_output)
 
