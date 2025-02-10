@@ -1,4 +1,20 @@
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastAPI Multiple Image Processing</title>
+</head>
+<body>
+    <h1>Upload Images One by One for Processing</h1>
+    <form id="uploadForm" action="/upload/" method="post" enctype="multipart/form-data">
+        <label for="files">Choose images (upload one at a time):</label>
+        <input type="file" id="files" name="files" multiple>
+        <br><br>
+        <button type="submit">Upload and Process</button>
+    </form>
+</body>
+</html>
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +44,7 @@ async def upload_images(files: list[UploadFile] = File(...)):
     <h1>Processing Results</h1>
     <div style="border: 1px solid #ccc; padding: 10px; max-height: 400px; overflow-y: scroll;">
     """
+    
     for file in files:
         try:
             # Save the uploaded file
@@ -67,22 +84,3 @@ async def upload_images(files: list[UploadFile] = File(...)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8888)
-
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FastAPI Multiple Image Processing</title>
-</head>
-<body>
-    <h1>Upload Multiple Images for Processing</h1>
-    <form action="/upload/" method="post" enctype="multipart/form-data">
-        <label for="files">Choose images:</label>
-        <input type="file" id="files" name="files" multiple required>
-        <br><br>
-        <button type="submit">Upload and Process</button>
-    </form>
-</body>
-</html>
