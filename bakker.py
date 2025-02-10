@@ -1,16 +1,19 @@
 
+import os
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
-import tempfile
 import shutil
-import os
-from app_japan import process_image_pipeline  # Your image processing function
+from app_japan import process_image_pipeline
 
 app = FastAPI()
 
-# Serve static files (for uploaded images)
+# Ensure the "static" directory exists
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+# Mount the "static" directory to serve uploaded images
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
@@ -22,15 +25,12 @@ async def read_root():
 @app.post("/upload/", response_class=HTMLResponse)
 async def upload_image(file: UploadFile = File(...)):
     try:
-        # Save the uploaded image to the "static" folder
         image_path = f"static/{file.filename}"
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
-        # Process the image using process_image_pipeline
+
         result = process_image_pipeline(image_path)
 
-        # Generate HTML response with the image and table
         html_content = f"""
         <h1>Processing Result</h1>
         <h3>Uploaded Image:</h3>
@@ -57,6 +57,4 @@ async def upload_image(file: UploadFile = File(...)):
         return HTMLResponse(content=f"<h1>Error: {str(e)}</h1><br><a href='/'>Try Again</a>")
 
 if __name__ == "__main__":
-    if not os.path.exists("static"):
-        os.makedirs("static")  # Create "static" folder if it doesn't exist
     uvicorn.run(app, host="0.0.0.0", port=8888)
