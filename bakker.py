@@ -1,4 +1,3 @@
-
 from ultralytics import YOLO
 from PIL import Image
 from datetime import datetime
@@ -125,6 +124,11 @@ def process_dl_information(input_file_path):
                             "Label": "Expiration Year Validity",
                             "Extracted_Text": f"Invalid ({MIN_EXPIRE_YEAR} - {MAX_EXPIRE_YEAR})"
                         })
+                        output.append({
+                            "Label": "Expiration Warning",
+                            "Extracted_Text": "WARNING: The expiration date is out of the valid range!"
+                        })
+                        logging.warning(f"Expiration year {year} is OUTSIDE the valid range ({MIN_EXPIRE_YEAR} - {MAX_EXPIRE_YEAR})")
                 else:
                     logging.warning(f"Could not extract valid year from Expiration Date: {extracted_text}")
                     output.append({"Label": "Expiration Date Extraction Failed", "Extracted_Text": extracted_text})
@@ -132,3 +136,4 @@ def process_dl_information(input_file_path):
     # Convert output to DataFrame
     data = pd.DataFrame(output)
     return data
+
