@@ -37,3 +37,9 @@ passport_info = parse_mrz(mrl1, mrl2)
 # Print Output
 for key, value in passport_info.items():
     print(f"{key}: {value}")
+
+P<RUSSMIRNOVA<<VALENTINA
+
+<<<<<<<
+
+5200000001RUS8008046F0902274<<<<<<<<<<<<<<06
