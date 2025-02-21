@@ -1,9 +1,17 @@
 import re
 
 def clean_mrl2(mrl2):
-    """ Fix common OCR issues in MRL2 """
+    """ Fix OCR issues and missing separators in MRL2 """
     mrl2 = re.sub(r'[^A-Z0-9<]', '<', mrl2)  # Replace any non-alphanumeric/non-< characters with `<`
     mrl2 = re.sub(r'<+', '<', mrl2)  # Remove duplicate `<`
+    
+    # If the passport number and country code are joined, insert a `<`
+    if re.match(r'^[A-Z0-9]{9,10}[A-Z]{3}', mrl2):
+        mrl2 = mrl2[:10] + '<' + mrl2[10:]  # Insert `<` after passport number
+    
+    # Ensure the line has 44 characters
+    mrl2 = mrl2.ljust(44, '<')
+    
     return mrl2.strip()
 
 def parse_mrl1(mrl1):
@@ -21,7 +29,7 @@ def parse_mrl1(mrl1):
 def parse_mrl2(mrl2):
     print("Raw MRL2 before cleaning:", mrl2)
     
-    mrl2 = clean_mrl2(mrl2)  # Clean OCR issues
+    mrl2 = clean_mrl2(mrl2)  # Fix OCR issues
 
     print("Cleaned MRL2:", mrl2)
 
@@ -42,10 +50,9 @@ def parse_mrl2(mrl2):
     return None
 
 # Example Inputs
-mrl1 = "P<JPNYARADA<<TARO<<<<<<<<<<<<<<"
-mrl2 = "AB1234567<JPN82010172901018.JP<<<<<<<<<"  # Has OCR errors
+mrl1 = "P<GBRANGUILLA<SPECIMEN<<ANGELA<ZOE<<<<<<<<<<"
+mrl2 = "9992026018GBD9501016F2911272<<<<<<<<<<<<<<00"  # Incorrect format
 
 print(parse_mrl1(mrl1))
 print(parse_mrl2(mrl2))
-
 
