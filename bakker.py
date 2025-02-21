@@ -1,8 +1,10 @@
 import re
 
-def parse_mrl1(mrl1):
-    match = re.match(r'P<([A-Z]{3})([A-Z]+)<<([A-Z]+)', mrl1)
-    import re
+def clean_mrl2(mrl2):
+    """ Fix common OCR issues in MRL2 """
+    mrl2 = re.sub(r'[^A-Z0-9<]', '<', mrl2)  # Replace any non-alphanumeric/non-< characters with `<`
+    mrl2 = re.sub(r'<+', '<', mrl2)  # Remove duplicate `<`
+    return mrl2.strip()
 
 def parse_mrl1(mrl1):
     match = re.match(r'P<([A-Z]{3})([A-Z]+)<<([A-Z<]+)', mrl1)
@@ -17,15 +19,18 @@ def parse_mrl1(mrl1):
     return None
 
 def parse_mrl2(mrl2):
-    # Debug: Print extracted text before processing
-    print("Raw MRL2:", mrl2)
+    print("Raw MRL2 before cleaning:", mrl2)
     
-    pattern = r'([A-Z0-9<]+)<([A-Z]{3})(\d{6})([MFX])(\d{6})([A-Z]{3})'
+    mrl2 = clean_mrl2(mrl2)  # Clean OCR issues
+
+    print("Cleaned MRL2:", mrl2)
+
+    pattern = r'([A-Z0-9]+)<([A-Z]{3})(\d{6})([MFX])(\d{6})([A-Z]{3})'
     match = re.match(pattern, mrl2)
 
     if match:
         return {
-            "passport_number": match.group(1).replace('<', ''),
+            "passport_number": match.group(1),
             "country_code": match.group(2),
             "birth_date": match.group(3),
             "sex": match.group(4),
@@ -36,9 +41,9 @@ def parse_mrl2(mrl2):
     print("MRL2 Parsing Failed:", mrl2)
     return None
 
-# Example Inputs (Ensure they match your actual OCR output)
-mrl1 = "P<JPNYAMADA<<TARO<<<<<<<<<<<<<<"
-mrl2 = "AB1234567<JPN8201017M2901018JPN<<<<<<<<<"
+# Example Inputs
+mrl1 = "P<JPNYARADA<<TARO<<<<<<<<<<<<<<"
+mrl2 = "AB1234567<JPN82010172901018.JP<<<<<<<<<"  # Has OCR errors
 
 print(parse_mrl1(mrl1))
 print(parse_mrl2(mrl2))
