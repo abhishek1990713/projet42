@@ -1,108 +1,66 @@
+
+import os
 import re
 import logging
 import numpy as np
-import pandas as pd
 from PIL import Image
-from datetime import datetime
+import pytesseract
 from ultralytics import YOLO
-import paddleocr
+from passport_test import parse_mrz  # Import MRZ parser
 
-# Initialize OCR
-ocr = paddleocr.PaddleOCR(lang='en')
+# Set Tesseract OCR path
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# MRZ Parsing Function
-def parse_mrz(mrl1, mrl2):
-    mrl1 = mrl1.ljust(44, "<")[:44]  # Ensure 44 characters
-    mrl2 = mrl2.ljust(44, "<")[:44]
+# Set logging level
+logging.getLogger("ppocr").setLevel(logging.WARNING)
 
-    document_type = mrl1[:2].strip("<")
-    country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
+# Load YOLO model
+model_path = r"C:\Users\AS34751\Downloads\test.pt"
+model = YOLO(model_path)
 
-    names_part = mrl1[5:].split("<<", 1)
-    surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
-    given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
-
-    passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
-    nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
-
-    def format_date(yyMMdd):
-        if len(yyMMdd) != 6 or not yyMMdd.isdigit():
-            return "Invalid Date"
-        yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
-        year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
-        return f"{dd}/{mm}/{year}"
-
-    dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
-    expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
-
-    gender_code = mrl2[20] if len(mrl2) > 20 else "X"
-    gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-    gender = gender_mapping.get(gender_code, "Unspecified")
-
-    optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
-
-    return {
-        "Document Type": document_type,
-        "Issuing Country": country_code,
-        "Surname": surname,
-        "Given Names": given_names,
-        "Passport Number": passport_number,
-        "Nationality": nationality,
-        "Date of Birth": dob,
-        "Gender": gender,
-        "Expiry Date": expiry_date,
-        "Optional Data": optional_data if optional_data else "N/A",
-    }
-
-# Image Preprocessing
-def preprocess_image(image_path):
-    image = Image.open(image_path)
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    return image
-
-# Passport Processing Function
-def process_passport_information(input_file_path):
-    model_path = r"C:\Users\A534751\Downloads\best1.pt"
-    model = YOLO(model_path)
-
-    results = model(input_file_path)
+# Function to process passport image and extract MRZ
+def process_passport_image(input_file_path, confidence_threshold=0.70):
     input_image = Image.open(input_file_path)
 
-    output = []
-    mrz_lines = []
+    # Run YOLO on the image
+    results = model(input_file_path)
+
+    # Initialize MRZ lines
+    mrl_one = None
+    mrl_second = None
 
     for result in results:
         boxes = result.boxes
-        result.show()
 
         for box in boxes:
             cls_id = int(box.cls[0])
-            label = result.names[cls_id]
-
+            label = result.names.get(cls_id, f"class_{cls_id}")  # Get class name
+            
+            # Extract bounding box coordinates
             bbox = box.xyxy[0].tolist()
+
+            # Crop detected region
             cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
 
-            cropped_image_np = np.array(cropped_image)
-            result_texts = ocr.ocr(cropped_image_np, cls=False)
+            # Perform OCR on cropped image
+            ocr_text = pytesseract.image_to_string(cropped_image).strip()
+            print(f"OCR Text for {label}: {ocr_text}")
 
-            extracted_text = "".join([text[1][0] for text in result_texts[0]]) if result_texts and result_texts[0] else ""
+            # Assign MRZ lines
+            if label == "MRL_ONE":
+                mrl_one = ocr_text.replace(" ", "").replace("\n", "")  # Remove spaces/newlines
+            elif label == "MRL_SECOND":
+                mrl_second = ocr_text.replace(" ", "").replace("\n", "")
 
-            output.append({'Label': label, 'Extracted_text': extracted_text})
+    # If both MRZ lines are found, parse them
+    if mrl_one and mrl_second:
+        passport_info = parse_mrz(mrl_one, mrl_second)
+        return passport_info
+    else:
+        return {"Error": "MRZ lines not fully detected"}
 
-            if label in ["MRL_One", "MRL_Second"]:
-                mrz_lines.append(extracted_text)
-
-    # Ensure we have two MRZ lines
-    if len(mrz_lines) == 2:
-        mrz_info = parse_mrz(mrz_lines[0], mrz_lines[1])
-        for key, value in mrz_info.items():
-            output.append({"Label": key, "Extracted_text": value})
-
-    data = pd.DataFrame(output)
-    return data
-
-# Run the function
-input_file_path = r"C:\CitiDev\japan_pipeline\data_set\passport\canada652.png"
-print(process_passport_information(input_file_path()))
-
+# Example usage
+if __name__ == "__main__":
+    input_file_path = "path_to_your_passport_image.jpg"  # Update this with actual image path
+    output = process_passport_image(input_file_path)
+    print(output)
