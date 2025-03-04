@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import pandas as pd  # Import pandas for DataFrame
 from PIL import Image
 import numpy as np
 from paddleocr import PaddleOCR
@@ -18,14 +19,15 @@ model_path = r"C:\Users\AS34751\Downloads\test.pt"
 model = YOLO(model_path)
 
 def process_passport_image(input_file_path, confidence_threshold=0.70):
-    """Processes a passport image, extracts MRZ text using PaddleOCR, and returns passport details."""
+    """Processes a passport image, extracts MRZ text using PaddleOCR, and returns passport details as a DataFrame."""
 
     # Load input image
     input_image = Image.open(input_file_path)
     results = model(input_file_path)  # YOLO object detection
 
-    # Initialize MRZ text variables
-    mrl1, mrl2 = None, None
+    # Initialize variables
+    extracted_data = []  # Store detected labels and OCR text
+    mrl1, mrl2 = None, None  # MRZ lines
 
     for result in results:
         boxes = result.boxes  # Detected bounding boxes
@@ -60,24 +62,35 @@ def process_passport_image(input_file_path, confidence_threshold=0.70):
 
             print(f"Detected {label} (Confidence: {confidence:.2f}): {extracted_text}")
 
+            # Store extracted text and label in the list
+            extracted_data.append({"Label": label, "Extracted Text": extracted_text, "Confidence": confidence})
+
             # Assign extracted text based on label (MRL_ONE or MRL_SECOND)
             if "MRL_ONE" in label.upper():
                 mrl1 = extracted_text
             elif "MRL_SECOND" in label.upper():
                 mrl2 = extracted_text
 
+    # Create a DataFrame with detected text and labels
+    detected_df = pd.DataFrame(extracted_data)
+
     # Ensure both MRZ lines are extracted
     if mrl1 and mrl2:
         passport_info = parse_mrz(mrl1, mrl2)  # Parse MRZ details
-        return passport_info
+
+        # Convert extracted passport info into a DataFrame
+        passport_df = pd.DataFrame([passport_info])
+
+        # Merge detected data and passport info
+        final_df = pd.concat([detected_df, passport_df], axis=1)
+        return final_df
     else:
-        return {"Error": "Failed to extract MRZ lines with sufficient confidence"}
+        return pd.DataFrame([{"Error": "Failed to extract MRZ lines with sufficient confidence"}])
 
 # Example Usage
 if __name__ == "__main__":
     image_path = r"C:\path\to\passport_image.jpg"  # Replace with actual image path
-    passport_data = process_passport_image(image_path)
-    
-    print("\nExtracted Passport Information:")
-    for key, value in passport_data.items():
-        print(f"{key}: {value}")
+    passport_df = process_passport_image(image_path)
+
+    print("\nExtracted Passport Information (DataFrame):")
+    print(passport_df)
