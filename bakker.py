@@ -1,60 +1,83 @@
+import os
 import re
+import logging
+from PIL import Image
+import numpy as np
+from paddleocr import PaddleOCR
+from ultralytics import YOLO
+from passport_test import parse_mrz  # Import MRZ parsing function
 
-def parse_mrz(mrl1, mrl2):
-    """Extracts passport details from MRZ (Machine Readable Zone) lines."""
+# Suppress unnecessary logging
+logging.getLogger("ppocr").setLevel(logging.WARNING)
 
-    # Ensure MRZ lines are padded to at least 44 characters
-    mrl1 = mrl1.ljust(44, "<")[:44]
-    mrl2 = mrl2.ljust(44, "<")[:44]
+# Initialize PaddleOCR (English and numeric mode for MRZ)
+ocr_model = PaddleOCR(use_angle_cls=False, lang="en")
 
-    # Extract document type (e.g., P, PD, PP)
-    document_type = mrl1[:2].strip("<")
+# Load YOLO model for passport MRZ detection
+model_path = r"C:\Users\AS34751\Downloads\test.pt"
+model = YOLO(model_path)
 
-    # Extract issuing country code
-    country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
+def process_passport_image(input_file_path, confidence_threshold=0.70):
+    """Processes a passport image, extracts MRZ text using PaddleOCR, and returns passport details."""
 
-    # Extract surname and given names
-    names_part = mrl1[5:].split("<<", 1)
-    surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
-    given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
+    # Load input image
+    input_image = Image.open(input_file_path)
+    results = model(input_file_path)  # YOLO object detection
 
-    # Extract passport number
-    passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
+    # Initialize MRZ text variables
+    mrl1, mrl2 = None, None
 
-    # Extract nationality
-    nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
+    for result in results:
+        boxes = result.boxes  # Detected bounding boxes
 
-    # Date conversion function (YYMMDD → DD/MM/YYYY)
-    def format_date(yyMMdd):
-        if len(yyMMdd) != 6 or not yyMMdd.isdigit():
-            return "Invalid Date"
-        yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
-        year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
-        return f"{dd}/{mm}/{year}"
+        for box in boxes:
+            cls_id = int(box.cls[0])  # Class ID
+            label = result.names.get(cls_id, "Unknown")  # Label name
+            confidence = box.conf[0].item()  # Extract confidence score
 
-    # Extract date of birth and expiry date
-    dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
-    expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
+            # Apply confidence threshold filter
+            if confidence < confidence_threshold:
+                print(f"Skipping {label} (Confidence: {confidence:.2f})")
+                continue
 
-    # Extract gender
-    gender_code = mrl2[20] if len(mrl2) > 20 else "X"
-    gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-    gender = gender_mapping.get(gender_code, "Unspecified")
+            # Extract bounding box coordinates
+            bbox = box.xyxy[0].tolist()
+            cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
 
-    # Extract optional data
-    optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
+            # Convert image to numpy array for OCR processing
+            cropped_image_np = np.array(cropped_image)
 
-    # Return structured passport data
-    return {
-        "Document Type": document_type,
-        "Issuing Country": country_code,
-        "Surname": surname,
-        "Given Names": given_names,
-        "Passport Number": passport_number,
-        "Nationality": nationality,
-        "Date of Birth": dob,
-        "Gender": gender,
-        "Expiry Date": expiry_date,
-        "Optional Data": optional_data if optional_data else "N/A",
-    }
+            # Perform OCR using PaddleOCR
+            ocr_results = ocr_model.ocr(cropped_image_np, cls=False)
 
+            # Extract text from OCR results with confidence check
+            extracted_text = ""
+            for line in ocr_results:
+                for word in line:
+                    word_text, word_confidence = word[1][0], word[1][1]
+                    if word_confidence >= confidence_threshold:
+                        extracted_text += word_text
+
+            print(f"Detected {label} (Confidence: {confidence:.2f}): {extracted_text}")
+
+            # Assign extracted text based on label (MRL_ONE or MRL_SECOND)
+            if "MRL_ONE" in label.upper():
+                mrl1 = extracted_text
+            elif "MRL_SECOND" in label.upper():
+                mrl2 = extracted_text
+
+    # Ensure both MRZ lines are extracted
+    if mrl1 and mrl2:
+        passport_info = parse_mrz(mrl1, mrl2)  # Parse MRZ details
+        return passport_info
+    else:
+        return {"Error": "Failed to extract MRZ lines with sufficient confidence"}
+
+# Example Usage
+if __name__ == "__main__":
+    image_path = r"C:\path\to\passport_image.jpg"  # Replace with actual image path
+    passport_data = process_passport_image(image_path)
+    
+    print("\nExtracted Passport Information:")
+    for key, value in passport_data.items():
+        print(f"{key}: {value}")
