@@ -1,96 +1,126 @@
-import os
-import re
-import logging
-import pandas as pd  # Import pandas for DataFrame
-from PIL import Image
-import numpy as np
-from paddleocr import PaddleOCR
+
 from ultralytics import YOLO
-from passport_test import parse_mrz  # Import MRZ parsing function
+from PIL import Image
+import os
+import numpy as np
+import logging
+import cv2
+import pandas as pd
+from paddleocr import PaddleOCR
+from doctr.models import ocr_predictor
 
-# Suppress unnecessary logging
-logging.getLogger("ppocr").setLevel(logging.WARNING)
+logging.getLogger('ppocr').setLevel(logging.WARNING)
 
-# Initialize PaddleOCR (English and numeric mode for MRZ)
-ocr_model = PaddleOCR(use_angle_cls=False, lang="en")
+# DocTR configuration
+os.environ["DOCTR_CACHE_DIR"] = r"/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models"
+os.environ['USE_TORCH'] = '1'
 
-# Load YOLO model for passport MRZ detection
-model_path = r"C:\Users\AS34751\Downloads\test.pt"
-model = YOLO(model_path)
+# Initialize DocTR OCR model
+ocr_model = ocr_predictor(det_arch='db_resnet50',
+                          reco_arch='crnn_vgg16_bn',
+                          pretrained=True)
 
-def process_passport_image(input_file_path, confidence_threshold=0.70):
-    """Processes a passport image, extracts MRZ text using PaddleOCR, and returns passport details as a DataFrame."""
+# PaddleOCR model paths
+det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
+rec_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
+cls_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer"
 
-    # Load input image
+# Initialize PaddleOCR
+paddle_ocr = PaddleOCR(lang='en',
+                        use_angle_cls=False,
+                        use_gpu=False,
+                        det=True,
+                        rec=True,
+                        cls=False,
+                        det_model_dir=det_model_dir,
+                        rec_model_dir=rec_model_dir,
+                        cls_model_dir=cls_model_dir)
+
+passport_model_path = r"/home/ko19678/japan_pipeline/ALL_Passport/best.pt"
+
+valid_issue_date = "22 AUG 2010"
+valid_expiry_date = "22 AUG 2029"
+
+
+def preprocess_image(image_path):
+    image = Image.open(image_path)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    return image
+
+
+def add_fixed_padding(image, right=100, left=100, top=100, bottom=100):
+    width, height = image.size
+    new_width = width + right + left
+    new_height = height + top + bottom
+
+    if image.mode == 'RGB':
+        color = (255, 255, 255)
+    else:
+        color = 0
+
+    result = Image.new(image.mode, (new_width, new_height), color)
+    result.paste(image, (left, top))
+    return result
+
+
+def extract_text_doctr(image_cv2):
+    """ Extract text using DocTR """
+    result_texts = ocr_model([image_cv2])
+    extracted_text = ""
+
+    if result_texts.pages:
+        for page in result_texts.pages:
+            for block in page.blocks:
+                for line in block.lines:
+                    extracted_text += "".join([word.value for word in line.words]) + " "
+
+    return extracted_text.strip()
+
+
+def extract_text_paddle(image_cv2):
+    """ Extract text using PaddleOCR """
+    result_texts = paddle_ocr.ocr(image_cv2, cls=False)
+    extracted_text = ""
+
+    if result_texts:
+        for result in result_texts:
+            for line in result:
+                extracted_text += line[1][0] + " "
+
+    return extracted_text.strip()
+
+
+def process_passport_information(input_file_path):
+    model = YOLO(passport_model_path)
+    input_image = preprocess_image(input_file_path)
+
+    results = model(input_image)
+
     input_image = Image.open(input_file_path)
-    results = model(input_file_path)  # YOLO object detection
-
-    # Initialize variables
-    extracted_data = []  # Store detected labels and OCR text
-    mrl1, mrl2 = None, None  # MRZ lines
+    output = []
 
     for result in results:
-        boxes = result.boxes  # Detected bounding boxes
-
+        boxes = result.boxes
         for box in boxes:
-            cls_id = int(box.cls[0])  # Class ID
-            label = result.names.get(cls_id, "Unknown")  # Label name
-            confidence = box.conf[0].item()  # Extract confidence score
+            cls_id = int(box.cls[0])
+            label = result.names[cls_id]
+            bbox = box.xyxy.tolist()[0]
 
-            # Apply confidence threshold filter
-            if confidence < confidence_threshold:
-                print(f"Skipping {label} (Confidence: {confidence:.2f})")
-                continue
-
-            # Extract bounding box coordinates
-            bbox = box.xyxy[0].tolist()
+            # Crop and pad image
             cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+            padded_image = add_fixed_padding(cropped_image, right=100, left=100, top=100, bottom=100)
 
-            # Convert image to numpy array for OCR processing
-            cropped_image_np = np.array(cropped_image)
+            cropped_image_np = np.array(padded_image)
+            cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
 
-            # Perform OCR using PaddleOCR
-            ocr_results = ocr_model.ocr(cropped_image_np, cls=False)
+            # Use PaddleOCR for "MRL_One" and "MRL_Second", otherwise use DocTR
+            if label in ["MRL_One", "MRL_Second"]:
+                extracted_text = extract_text_paddle(cropped_image_cv2)
+            else:
+                extracted_text = extract_text_doctr(cropped_image_cv2)
 
-            # Extract text from OCR results with confidence check
-            extracted_text = ""
-            for line in ocr_results:
-                for word in line:
-                    word_text, word_confidence = word[1][0], word[1][1]
-                    if word_confidence >= confidence_threshold:
-                        extracted_text += word_text
+            output.append({'Label': label, 'Extracted_text': extracted_text})
 
-            print(f"Detected {label} (Confidence: {confidence:.2f}): {extracted_text}")
-
-            # Store extracted text and label in the list
-            extracted_data.append({"Label": label, "Extracted Text": extracted_text, "Confidence": confidence})
-
-            # Assign extracted text based on label (MRL_ONE or MRL_SECOND)
-            if "MRL_ONE" in label.upper():
-                mrl1 = extracted_text
-            elif "MRL_SECOND" in label.upper():
-                mrl2 = extracted_text
-
-    # Create a DataFrame with detected text and labels
-    detected_df = pd.DataFrame(extracted_data)
-
-    # Ensure both MRZ lines are extracted
-    if mrl1 and mrl2:
-        passport_info = parse_mrz(mrl1, mrl2)  # Parse MRZ details
-
-        # Convert extracted passport info into a DataFrame
-        passport_df = pd.DataFrame([passport_info])
-
-        # Merge detected data and passport info
-        final_df = pd.concat([detected_df, passport_df], axis=1)
-        return final_df
-    else:
-        return pd.DataFrame([{"Error": "Failed to extract MRZ lines with sufficient confidence"}])
-
-# Example Usage
-if __name__ == "__main__":
-    image_path = r"C:\path\to\passport_image.jpg"  # Replace with actual image path
-    passport_df = process_passport_image(image_path)
-
-    print("\nExtracted Passport Information (DataFrame):")
-    print(passport_df)
+    data = pd.DataFrame(output)
+    return data
