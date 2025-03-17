@@ -17,7 +17,7 @@ def sanitize_mrl2(mrl2):
     return mrl2  
 
 def format_date(date_str):
-    """Convert various DOB formats into DD/MM/YYYY format."""
+    """Convert detected date into DD/MM/YYYY format."""
     date_formats = ["%y%m%d", "%y-%m-%d", "%y/%m/%d", "%d%b%y"]  # Supported formats
     for fmt in date_formats:
         try:
@@ -71,11 +71,11 @@ def parse_mrz(mrl1, mrl2):
             gender_code = mrl2[gender_idx]
 
             # Extract DOB: Between nationality and gender
-            dob_text = mrl2[nationality_idx + 3:gender_idx]
+            dob_text = mrl2[nationality_idx + 3:gender_idx].strip("<")
             dob = format_date(dob_text)  
 
-            # Extract Expiry Date: After gender
-            expiry_text = mrl2[gender_idx + 1:gender_idx + 7]
+            # Extract Expiry Date: After gender (next 6 characters)
+            expiry_text = mrl2[gender_idx + 1:gender_idx + 7].strip("<")
             expiry_date = format_date(expiry_text)
         else:
             gender_code, dob, expiry_date = "X", "Invalid Date", "Invalid Date"
