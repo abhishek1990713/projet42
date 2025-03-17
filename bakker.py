@@ -7,14 +7,17 @@ import pandas as pd
 def parse_mrz(mrl1, mrl2):
     """Extracts passport details from MRZ (Machine Readable Zone) lines and returns a DataFrame."""
 
-    # Ensure MRZ lines are at least 44 characters
+    # Ensure MRZ lines are properly padded to at least 44 characters
     mrl1 = mrl1.ljust(44, "<")[:44]
     mrl2 = mrl2.ljust(44, "<")[:44]
 
-    # Extract document type
+    print("DEBUG - MRZ Line 1:", mrl1)  # Debugging MRZ Line 1
+    print("DEBUG - MRZ Line 2:", mrl2)  # Debugging MRZ Line 2
+
+    # Extract document type (P)
     document_type = mrl1[:2].strip("<")
 
-    # Extract issuing country code
+    # Extract issuing country (USA)
     country_code = mrl1[2:5].strip("<")
 
     # Extract surname and given names
@@ -22,7 +25,10 @@ def parse_mrz(mrl1, mrl2):
     surname = re.sub(r"<+", " ", names_part[0]).strip() if len(names_part) > 0 else "Unknown"
     given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
 
-    # Extract passport number (positions 0-9)
+    print("DEBUG - Surname:", surname)  # Debugging Surname Extraction
+    print("DEBUG - Given Names:", given_names)  # Debugging Given Names Extraction
+
+    # Extract passport number (first 9 characters of second MRZ line)
     passport_number = mrl2[:9].strip("<")
 
     # Extract nationality (positions 10-12)
@@ -38,17 +44,23 @@ def parse_mrz(mrl1, mrl2):
 
     # Extract date of birth (positions 13-18)
     dob = format_date(mrl2[13:19])
+    print("DEBUG - Date of Birth:", dob)  # Debugging Date of Birth Extraction
 
     # Extract gender (position 20)
     gender_code = mrl2[20] if len(mrl2) >= 21 else "<"
     gender_mapping = {"M": "Male", "F": "Female"}
     gender = gender_mapping.get(gender_code, "Unspecified")
 
+    print("DEBUG - Gender Code:", gender_code, "Parsed as:", gender)  # Debugging Gender Extraction
+
     # Extract expiry date (positions 21-26)
     expiry_date = format_date(mrl2[21:27])
+    print("DEBUG - Expiry Date:", expiry_date)  # Debugging Expiry Date Extraction
 
     # Extract optional data (everything after position 28)
     optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
+
+    print("DEBUG - Optional Data:", optional_data)  # Debugging Optional Data Extraction
 
     # Create structured data for DataFrame
     data = [
