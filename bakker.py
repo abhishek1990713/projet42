@@ -40,17 +40,25 @@ def parse_mrz(mrl1, mrl2):
     # Extract passport number (always first 9 characters)
     passport_number = mrl2[:9]
 
-    # Find nationality index (first occurrence of 3 uppercase letters)
+    # Find nationality index (first occurrence of 3 uppercase letters after passport number)
     nationality_match = re.search(r"[A-Z]{3}", mrl2[9:])
     nationality_idx = nationality_match.start() + 9 if nationality_match else None
 
     if nationality_idx is not None:
         nationality = mrl2[nationality_idx:nationality_idx + 3]
-        dob = format_date(mrl2[nationality_idx + 3:nationality_idx + 9])
-        gender_code = mrl2[nationality_idx + 9] if len(mrl2) > nationality_idx + 9 else "X"
-        expiry_date = format_date(mrl2[nationality_idx + 10:nationality_idx + 16])
+        
+        # Detect gender (first occurrence of 'M' or 'F' after nationality)
+        gender_match = re.search(r"[MF]", mrl2[nationality_idx + 3:])
+        gender_idx = gender_match.start() + nationality_idx + 3 if gender_match else None
+        
+        if gender_idx is not None:
+            gender_code = mrl2[gender_idx]
+            dob = format_date(mrl2[nationality_idx + 3:gender_idx])  # DOB is between nationality and gender
+            expiry_date = format_date(mrl2[gender_idx + 1:gender_idx + 7])  # Expiry date comes after gender
+        else:
+            gender_code, dob, expiry_date = "X", "Invalid Date", "Invalid Date"
     else:
-        nationality, dob, gender_code, expiry_date = "Unknown", "Invalid Date", "X", "Invalid Date"
+        nationality, gender_code, dob, expiry_date = "Unknown", "X", "Invalid Date", "Invalid Date"
 
     # Map gender code
     gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
