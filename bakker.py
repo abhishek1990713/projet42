@@ -11,17 +11,30 @@ def sanitize_mrl2(mrl2):
         return mrl2[:first_lt_index] + "<" * (len(mrl2) - first_lt_index)
     return mrl2  # Return unchanged if no '<' found
 
+def find_nationality_index(mrl2):
+    """Find the index where nationality (A-Z) starts in MRL_Second."""
+    match = re.search(r"[A-Z]{3}", mrl2)  # Look for three consecutive uppercase letters
+    return match.start() if match else None
+
+def format_date(yyMMdd):
+    """Convert YYMMDD to DD/MM/YYYY format."""
+    if len(yyMMdd) != 6 or not yyMMdd.isdigit():
+        return "Invalid Date"
+    yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
+    year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
+    return f"{dd}/{mm}/{year}"
+
 def parse_mrz(mrl1, mrl2):
-    """Extracts passport details from MRZ (Machine Readable Zone) lines and returns a DataFrame."""
+    """Extracts passport details from MRZ lines and returns a DataFrame."""
 
-    # Ensure MRZ lines are padded to at least 44 characters
+    # Ensure MRZ lines are padded correctly
     mrl1 = mrl1.ljust(44, "<")[:44]
-    mrl2 = sanitize_mrl2(mrl2.ljust(44, "<")[:44])  # Apply sanitization
+    mrl2 = sanitize_mrl2(mrl2.ljust(44, "<")[:44])
 
-    # Extract document type (e.g., P, PD, PP)
+    # Extract document type
     document_type = mrl1[:2].strip("<")
 
-    # Extract issuing country code
+    # Extract issuing country
     country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
 
     # Extract surname and given names
@@ -29,31 +42,22 @@ def parse_mrz(mrl1, mrl2):
     surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
     given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
 
-    # Extract passport number
-    passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
+    # Find nationality index dynamically
+    nationality_idx = find_nationality_index(mrl2)
+    
+    if nationality_idx:
+        passport_number = mrl2[:nationality_idx].strip("<")
+        nationality = mrl2[nationality_idx:nationality_idx + 3]
+        dob = format_date(mrl2[nationality_idx + 3:nationality_idx + 9])
+        gender_code = mrl2[nationality_idx + 9] if len(mrl2) > nationality_idx + 9 else "X"
+        expiry_date = format_date(mrl2[nationality_idx + 10:nationality_idx + 16])
+        optional_data = mrl2[nationality_idx + 17:].strip("<")
+    else:
+        passport_number, nationality, dob, gender_code, expiry_date, optional_data = "Unknown", "Unknown", "Invalid Date", "X", "Invalid Date", "N/A"
 
-    # Extract nationality
-    nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
-
-    # Date conversion function (YYMMDD → DD/MM/YYYY)
-    def format_date(yyMMdd):
-        if len(yyMMdd) != 6 or not yyMMdd.isdigit():
-            return "Invalid Date"
-        yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
-        year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
-        return f"{dd}/{mm}/{year}"
-
-    # Extract date of birth and expiry date
-    dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
-    expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
-
-    # Extract gender
-    gender_code = mrl2[20] if len(mrl2) > 20 else "X"
+    # Map gender code
     gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
     gender = gender_mapping.get(gender_code, "Unspecified")
-
-    # Extract optional data
-    optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
 
     # Create structured data for DataFrame
     data = [
