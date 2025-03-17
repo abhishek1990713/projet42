@@ -11,7 +11,7 @@ def parse_mrz(mrl1, mrl2):
     mrl1 = mrl1.ljust(44, "<")[:44]
     mrl2 = mrl2.ljust(44, "<")[:44]
 
-    # Extract document type (e.g., P, PD, PP)
+    # Extract document type
     document_type = mrl1[:2].strip("<")
 
     # Extract issuing country code
@@ -22,32 +22,32 @@ def parse_mrz(mrl1, mrl2):
     surname = re.sub(r"<+", " ", names_part[0]).strip() if len(names_part) > 0 else "Unknown"
     given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
 
-    # Extract passport number (first 9 characters from MRL_Second)
-    passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) >= 9 else "Unknown"
+    # Extract passport number (positions 0-9)
+    passport_number = mrl2[:9].strip("<")
 
-    # Extract nationality (position 11-13)
-    nationality = mrl2[10:13].strip("<") if len(mrl2) >= 13 else "Unknown"
+    # Extract nationality (positions 10-12)
+    nationality = mrl2[10:13].strip("<")
 
     # Function to convert YYMMDD → DD/MM/YYYY format
     def format_date(yyMMdd):
-        if len(yyMMdd) != 6 or not yyMMdd.isdigit():
+        if not re.match(r"^\d{6}$", yyMMdd):  # Ensure it's a 6-digit number
             return "Invalid Date"
         yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
         year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
         return f"{dd}/{mm}/{year}"
 
-    # Extract date of birth (positions 14-19)
-    dob = format_date(mrl2[13:19]) if len(mrl2) >= 19 else "Unknown"
+    # Extract date of birth (positions 13-18)
+    dob = format_date(mrl2[13:19])
 
     # Extract gender (position 20)
-    gender_code = mrl2[20] if len(mrl2) >= 21 else "X"
-    gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
+    gender_code = mrl2[20] if len(mrl2) >= 21 else "<"
+    gender_mapping = {"M": "Male", "F": "Female"}
     gender = gender_mapping.get(gender_code, "Unspecified")
 
-    # Extract expiry date (positions 21-27)
-    expiry_date = format_date(mrl2[21:27]) if len(mrl2) >= 27 else "Unknown"
+    # Extract expiry date (positions 21-26)
+    expiry_date = format_date(mrl2[21:27])
 
-    # Extract optional data (remaining characters after position 28)
+    # Extract optional data (everything after position 28)
     optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
 
     # Create structured data for DataFrame
@@ -67,4 +67,3 @@ def parse_mrz(mrl1, mrl2):
     # Convert to DataFrame
     df = pd.DataFrame(data, columns=["Label", "Extracted_text"])
     return df
-
