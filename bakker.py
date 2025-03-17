@@ -6,15 +6,10 @@ import pandas as pd
 
 def sanitize_mrl2(mrl2):
     """Modify MRL_Second to replace everything after the first '<' with '<'."""
-    first_lt_index = mrl2.find("<")  # Find the first occurrence of '<'
+    first_lt_index = mrl2.find("<")  
     if first_lt_index != -1:
         return mrl2[:first_lt_index] + "<" * (len(mrl2) - first_lt_index)
-    return mrl2  # Return unchanged if no '<' found
-
-def find_nationality_index(mrl2):
-    """Find the index where nationality (A-Z) starts in MRL_Second."""
-    match = re.search(r"[A-Z]{3}", mrl2)  # Look for three consecutive uppercase letters
-    return match.start() if match else None
+    return mrl2  
 
 def format_date(yyMMdd):
     """Convert YYMMDD to DD/MM/YYYY format."""
@@ -42,18 +37,20 @@ def parse_mrz(mrl1, mrl2):
     surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
     given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
 
-    # Find nationality index dynamically
-    nationality_idx = find_nationality_index(mrl2)
-    
-    if nationality_idx:
-        passport_number = mrl2[:nationality_idx].strip("<")
+    # Extract passport number (always first 9 characters)
+    passport_number = mrl2[:9]
+
+    # Find nationality index (first occurrence of 3 uppercase letters)
+    nationality_match = re.search(r"[A-Z]{3}", mrl2[9:])
+    nationality_idx = nationality_match.start() + 9 if nationality_match else None
+
+    if nationality_idx is not None:
         nationality = mrl2[nationality_idx:nationality_idx + 3]
         dob = format_date(mrl2[nationality_idx + 3:nationality_idx + 9])
         gender_code = mrl2[nationality_idx + 9] if len(mrl2) > nationality_idx + 9 else "X"
         expiry_date = format_date(mrl2[nationality_idx + 10:nationality_idx + 16])
-        optional_data = mrl2[nationality_idx + 17:].strip("<")
     else:
-        passport_number, nationality, dob, gender_code, expiry_date, optional_data = "Unknown", "Unknown", "Invalid Date", "X", "Invalid Date", "N/A"
+        nationality, dob, gender_code, expiry_date = "Unknown", "Invalid Date", "X", "Invalid Date"
 
     # Map gender code
     gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
@@ -70,7 +67,6 @@ def parse_mrz(mrl1, mrl2):
         ("Date of Birth", dob),
         ("Gender", gender),
         ("Expiry Date", expiry_date),
-        ("Optional Data", optional_data if optional_data else "N/A"),
     ]
 
     # Convert to DataFrame
