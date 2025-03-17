@@ -1,12 +1,16 @@
 
 
+mrl1 = "P<USAGORDON<<STEVE<<<<<<<<<<<<<<<<<<<<<<<<<"
+mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
 
+df = parse_mrz(mrl1, mrl2)
+print(df)
 import re
 import pandas as pd
 
 def sanitize_mrl2(mrl2):
     """Modify MRL_Second to replace everything after the first '<' with '<'."""
-    first_lt_index = mrl2.find("<")  
+    first_lt_index = mrl2.find("<")
     if first_lt_index != -1:
         return mrl2[:first_lt_index] + "<" * (len(mrl2) - first_lt_index)
     return mrl2  
@@ -40,17 +44,17 @@ def parse_mrz(mrl1, mrl2):
     # Extract passport number (always first 9 characters)
     passport_number = mrl2[:9]
 
-    # Find nationality index (first occurrence of 3 uppercase letters after passport number)
-    nationality_match = re.search(r"[A-Z]{3}", mrl2[9:])
-    nationality_idx = nationality_match.start() + 9 if nationality_match else None
+    # Find nationality (first occurrence of three consecutive uppercase letters)
+    nationality_match = re.search(r"[A-Z]{3}", mrl2)
+    nationality_idx = nationality_match.start() if nationality_match else None
 
     if nationality_idx is not None:
         nationality = mrl2[nationality_idx:nationality_idx + 3]
-        
-        # Detect gender (first occurrence of 'M' or 'F' after nationality)
+
+        # Detect gender (first 'M' or 'F' after nationality)
         gender_match = re.search(r"[MF]", mrl2[nationality_idx + 3:])
         gender_idx = gender_match.start() + nationality_idx + 3 if gender_match else None
-        
+
         if gender_idx is not None:
             gender_code = mrl2[gender_idx]
             dob = format_date(mrl2[nationality_idx + 3:gender_idx])  # DOB is between nationality and gender
