@@ -15,7 +15,7 @@ def parse_mrz(mrl1, mrl2):
     document_type = mrl1[:2].strip("<")
 
     # Extract issuing country code
-    country_code = mrl1[2:5] if len(mrl1) >= 5 else "Unknown"
+    country_code = mrl1[2:5].strip("<")
 
     # Extract surname and given names
     names_part = mrl1[5:].split("<<", 1)
@@ -39,12 +39,12 @@ def parse_mrz(mrl1, mrl2):
     # Extract date of birth (positions 14-19)
     dob = format_date(mrl2[13:19]) if len(mrl2) >= 19 else "Unknown"
 
-    # Extract gender (position 21)
+    # Extract gender (position 20)
     gender_code = mrl2[20] if len(mrl2) >= 21 else "X"
     gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
     gender = gender_mapping.get(gender_code, "Unspecified")
 
-    # Extract expiry date (positions 22-27)
+    # Extract expiry date (positions 21-27)
     expiry_date = format_date(mrl2[21:27]) if len(mrl2) >= 27 else "Unknown"
 
     # Extract optional data (remaining characters after position 28)
@@ -68,5 +68,3 @@ def parse_mrz(mrl1, mrl2):
     df = pd.DataFrame(data, columns=["Label", "Extracted_text"])
     return df
 
-MRL_One = "P<USAGORDON<<STEVE<<<<<<<<<<<<<<<<<<<K"
-MRL_Second = "75726045510USA4245682M8312915724<2126"
