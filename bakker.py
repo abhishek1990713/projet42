@@ -68,3 +68,5 @@ def parse_mrz(mrl1, mrl2):
     df = pd.DataFrame(data, columns=["Label", "Extracted_text"])
     return df
 
+MRL_One = "P<USAGORDON<<STEVE<<<<<<<<<<<<<<<<<<<K"
+MRL_Second = "75726045510USA4245682M8312915724<2126"
