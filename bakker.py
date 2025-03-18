@@ -8,7 +8,6 @@ print(df)
 
 import re
 import pandas as pd
-from datetime import datetime
 
 def sanitize_mrl2(mrl2):
     """Modify MRL_Second to replace everything after the first '<' with '<'."""
@@ -16,18 +15,6 @@ def sanitize_mrl2(mrl2):
     if first_lt_index != -1:
         return mrl2[:first_lt_index] + "<" * (len(mrl2) - first_lt_index)
     return mrl2  
-
-def format_date(date_str):
-    """Convert detected date into DD/MM/YYYY format."""
-    date_formats = ["%y%m%d", "%y-%m-%d", "%y/%m/%d", "%d%b%y"]  # Supported formats
-    for fmt in date_formats:
-        try:
-            date_obj = datetime.strptime(date_str, fmt)
-            year = date_obj.year if date_obj.year > 1930 else date_obj.year + 100  # Adjust century if needed
-            return date_obj.strftime(f"%d/%m/{year}")
-        except ValueError:
-            continue
-    return "Invalid Date"
 
 def extract_passport_number(mrl2):
     """Extract the first 9 or fewer characters for passport number."""
@@ -69,13 +56,11 @@ def parse_mrz(mrl1, mrl2):
         if gender_idx is not None:
             gender_code = mrl2[gender_idx]
 
-            # Extract DOB: Between nationality and gender
-            dob_text = mrl2[nationality_idx + 3:gender_idx].strip("<")
-            dob = format_date(dob_text)  
+            # Extract DOB: Between nationality and gender (No formatting applied)
+            dob = mrl2[nationality_idx + 3:gender_idx].strip("<")
 
-            # Extract Expiry Date: After gender (next 6 characters)
-            expiry_text = mrl2[gender_idx + 1:gender_idx + 7].strip("<")
-            expiry_date = format_date(expiry_text)
+            # Extract Expiry Date: After gender (No formatting applied)
+            expiry_date = mrl2[gender_idx + 1:gender_idx + 7].strip("<")
         else:
             gender_code, dob, expiry_date = "X", "Invalid Date", "Invalid Date"
     else:
@@ -93,9 +78,9 @@ def parse_mrz(mrl1, mrl2):
         ("Given Names", given_names),
         ("Passport Number", passport_number),
         ("Nationality", nationality),
-        ("Date of Birth", dob),
+        ("Date of Birth", dob),  # No formatting applied
         ("Gender", gender),
-        ("Expiry Date", expiry_date),
+        ("Expiry Date", expiry_date),  # No formatting applied
     ]
 
     # Convert to DataFrame
