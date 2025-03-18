@@ -5,6 +5,7 @@ mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
 
 df = parse_mrz(mrl1, mrl2)
 print(df)
+
 import re
 import pandas as pd
 from datetime import datetime
@@ -29,11 +30,9 @@ def format_date(date_str):
     return "Invalid Date"
 
 def extract_passport_number(mrl2):
-    """Extract first 9 characters ensuring the last 4 are numbers."""
-    potential_passport = mrl2[:9]
-    if potential_passport[-4:].isdigit():
-        return potential_passport
-    return "Invalid Passport No"
+    """Extract the first 9 or fewer characters for passport number."""
+    match = re.match(r"([A-Z0-9]{1,9})", mrl2)  # Match up to 9 characters (letters & numbers)
+    return match.group(1) if match else "Invalid Passport No"
 
 def parse_mrz(mrl1, mrl2):
     """Extracts passport details from MRZ lines and returns a DataFrame."""
