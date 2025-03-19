@@ -6,83 +6,62 @@ mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
 df = parse_mrz(mrl1, mrl2)
 print(df)
 
-import re
-import pandas as pd
+import ocrmypdf
+import os
 
-def sanitize_mrl2(mrl2):
-    """Modify MRL_Second to replace everything after the first '<' with '<'."""
-    first_lt_index = mrl2.find("<")
-    if first_lt_index != -1:
-        return mrl2[:first_lt_index] + "<" * (len(mrl2) - first_lt_index)
-    return mrl2  
+# Set input and output folders
+input_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/input"
+output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
 
-def extract_passport_number(mrl2):
-    """Extract the first 9 or fewer characters for passport number."""
-    match = re.match(r"([A-Z0-9]{1,9})", mrl2)  # Match up to 9 characters (letters & numbers)
-    return match.group(1) if match else "Invalid Passport No"
+# Ensure output folder exists
+os.makedirs(output_folder, exist_ok=True)
 
-def parse_mrz(mrl1, mrl2):
-    """Extracts passport details from MRZ lines and returns a DataFrame."""
+def create_searchable_pdf(input_file_path, output_file_path):
+    try:
+        extension = input_file_path.split('.')[-1].lower()  # Get file extension
+        print(f"📄 Processing: {input_file_path}")
 
-    # Ensure MRZ lines are padded correctly
-    mrl1 = mrl1.ljust(44, "<")[:44]
-    mrl2 = sanitize_mrl2(mrl2.ljust(44, "<")[:44])
+        # Common OCR parameters
+        ocr_params = dict(
+            language="jpn+eng",  # Supports both Japanese & English OCR
+            force_ocr=True,  # Force OCR even if text exists
+            redo_ocr=True,  # Remove old OCR layers before applying new
+            deskew=True,  # Fix skewed text
+            rotate_pages=True,  # Auto-rotate misaligned pages
+            rotate_pages_threshold=5.0,  # Rotation confidence threshold
+            remove_background=True,  # Remove noise from scanned pages
+            clean=True,  # Remove speckles & unwanted marks
+            clean_final=True,  # Additional post-cleaning
+            optimize=3,  # Maximum compression without losing quality
+            pdfa=True,  # Create PDF/A (long-term archive standard)
+            pdfa_image_compression="lossless",  # No quality loss
+            jpeg_quality=92,  # High-quality JPEG compression
+            image_dpi=300,  # High DPI for accurate OCR on images
+            pdf_renderer="hocr",  # Ensure better text overlay in PDF
+            progress_bar=True,  # Show progress bar
+            jobs=4  # Parallel processing for speed
+        )
 
-    # Extract document type
-    document_type = mrl1[:2].strip("<")
+        if extension in ['pdf']:
+            ocrmypdf.ocr(input_file_path, output_file_path, **ocr_params)
 
-    # Extract issuing country
-    country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
+        elif extension in ['jpeg', 'jpg', 'png', 'tiff', 'tif']:
+            print("🖼️ Processing image file")
+            ocrmypdf.ocr(input_file_path, output_file_path, **ocr_params)
 
-    # Extract surname and given names
-    names_part = mrl1[5:].split("<<", 1)
-    surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
-    given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
+        print(f"✅ Searchable PDF created: {output_file_path}")
 
-    # Extract passport number
-    passport_number = extract_passport_number(mrl2)
+    except Exception as e:
+        print(f"❌ Error processing {input_file_path}: {e}")
 
-    # Find nationality (first occurrence of three consecutive uppercase letters)
-    nationality_match = re.search(r"[A-Z]{3}", mrl2)
-    nationality_idx = nationality_match.start() if nationality_match else None
+# Process all files in the input folder
+for filename in os.listdir(input_folder):
+    input_file_path = os.path.join(input_folder, filename)
+    output_file_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_searchable.pdf")
 
-    if nationality_idx is not None:
-        nationality = mrl2[nationality_idx:nationality_idx + 3]
+    # Ensure it's a file (not a folder)
+    if os.path.isfile(input_file_path):
+        create_searchable_pdf(input_file_path, output_file_path)
 
-        # Detect gender (first 'M' or 'F' after nationality)
-        gender_match = re.search(r"[MF]", mrl2[nationality_idx + 3:])
-        gender_idx = gender_match.start() + nationality_idx + 3 if gender_match else None
+print("🎯 All files processed successfully.")
 
-        if gender_idx is not None:
-            gender_code = mrl2[gender_idx]
-
-            # Extract DOB: Between nationality and gender (No formatting applied)
-            dob = mrl2[nationality_idx + 3:gender_idx].strip("<")
-
-            # Extract Expiry Date: After gender (No formatting applied)
-            expiry_date = mrl2[gender_idx + 1:gender_idx + 7].strip("<")
-        else:
-            gender_code, dob, expiry_date = "X", "Invalid Date", "Invalid Date"
-    else:
-        nationality, gender_code, dob, expiry_date = "Unknown", "X", "Invalid Date", "Invalid Date"
-
-    # Map gender code
-    gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-    gender = gender_mapping.get(gender_code, "Unspecified")
-
-    # Create structured data for DataFrame
-    data = [
-        ("Document Type", document_type),
-        ("Issuing Country", country_code),
-        ("Surname", surname),
-        ("Given Names", given_names),
-        ("Passport Number", passport_number),
-        ("Nationality", nationality),
-        ("Date of Birth", dob),  # No formatting applied
-        ("Gender", gender),
-        ("Expiry Date", expiry_date),  # No formatting applied
-    ]
-
-    # Convert to DataFrame
-    df = pd.DataFrame(data, columns=["Label", "Extracted_Text"])
-    return df
