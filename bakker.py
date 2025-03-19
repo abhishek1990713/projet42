@@ -19,28 +19,46 @@ os.environ["PATH"] += os.pathsep + poppler_path
 
 # Set the Ghostscript path
 gs_path = r"/home/ko19678/.conda/pkgs/ghostscript-10.04.0-h5888daf_0/bin"
-os.environ["PATH"] += os.pathsep + gs_path  # Fixed typo
+os.environ["PATH"] += os.pathsep + gs_path  
 
 # Supported file extensions
 IMAGE_EXTENSIONS = {'jpeg', 'tiff', 'tif', 'jpg', 'png'}
 PDF_EXTENSIONS = {'pdf'}
 
+# Toggle Parameters (Enable/Disable Features)
+ENABLE_OPTIONS = {
+    "language": "eng+jpn",  # English + Japanese OCR
+    "deskew": True,  # Fix skewed pages
+    "rotate_pages": True,  # Auto-rotate pages
+    "remove_background": True,  # Remove noise from scans
+    "optimize": 3,  # Maximum PDF optimization
+    "output_type": "pdfa",  # Save as PDF/A (archival)
+    "force_ocr": True,  # OCR everything, even text PDFs
+    "skip_text": False,  # OCR even if text is already present
+    "redo_ocr": True,  # Always re-run OCR
+    "clean": True,  # Remove artifacts
+    "pdf_renderer": "sandwich",  # Best rendering mode
+    "image_dpi": 300,  # High DPI for images
+    "tesseract_oem": 1,  # Tesseract OCR engine mode
+    "tesseract_timeout": 600,  # Timeout for OCR (10 min)
+    "rotate_pages_threshold": 5.0,  # Confidence threshold for rotation
+    "remove_vectors": True,  # Remove vector graphics
+    "jpeg_quality": 90,  # Image compression quality
+    "fast_web_view": True,  # Enable fast web viewing
+    "keep_temporary_files": False,  # Delete temp files
+    "sidecar": None,  # No extra text file output
+}
+
 def create_searchable_pdf(input_file_path, output_pdf_path):
-    """Converts a PDF or image to a searchable PDF."""
+    """Converts PDFs and images into fully optimized searchable PDFs with all available parameters."""
     try:
-        extension = input_file_path.split('.')[-1].lower()  # Normalize extension check
+        extension = input_file_path.split('.')[-1].lower()
         print(f"Processing: {input_file_path} (Type: {extension})")
 
-        if extension in PDF_EXTENSIONS:
-            # Convert PDF to searchable PDF
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True)
-
-        elif extension in IMAGE_EXTENSIONS:
-            print("Processing image file...")
-            # Convert image to searchable PDF
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300, pdf_renderer="hocr")
-
-        print(f"✅ Searchable PDF created: {output_pdf_path}")
+        if extension in PDF_EXTENSIONS or extension in IMAGE_EXTENSIONS:
+            # Process file with all parameters
+            ocrmypdf.ocr(input_file_path, output_pdf_path, **ENABLE_OPTIONS)
+            print(f"✅ Searchable PDF created: {output_pdf_path}")
 
     except Exception as e:
         print(f"❌ Error processing {input_file_path}: {e}")
@@ -52,7 +70,7 @@ def process_folder(input_folder, output_folder):
 
     for filename in os.listdir(input_folder):
         file_path = os.path.join(input_folder, filename)
-        if os.path.isfile(file_path):  # Ensure it's a file
+        if os.path.isfile(file_path):
             extension = filename.split('.')[-1].lower()
             if extension in PDF_EXTENSIONS or extension in IMAGE_EXTENSIONS:
                 output_pdf_path = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}_searchable.pdf")
@@ -64,3 +82,4 @@ output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
 
 # Process all files in the input folder
 process_folder(input_folder, output_folder)
+
