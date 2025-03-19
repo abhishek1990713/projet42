@@ -11,6 +11,7 @@ import pytesseract
 import pdfplumber
 import json
 import os
+from PIL import Image
 
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -18,6 +19,21 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 # Set Ghostscript path
 gs_path = r"/home/ko19678/.conda/pkgs/ghostscript-10.04.0-h5888daf_0/bin"
 os.environ["PATH"] += os.pathsep + gs_path
+
+def remove_alpha_channel(image_path):
+    """Convert PNG images with an alpha channel to RGB (removes transparency)."""
+    try:
+        with Image.open(image_path) as img:
+            if img.mode == "RGBA":
+                print(f"Removing alpha channel from: {image_path}")
+                img = img.convert("RGB")
+                temp_image_path = os.path.join(os.path.dirname(image_path), "temp_" + os.path.basename(image_path))
+                img.save(temp_image_path)
+                return temp_image_path  # Return the new RGB image path
+            return image_path  # Return the original path if no alpha channel
+    except Exception as e:
+        print(f"Error processing image {image_path}: {e}")
+        return None
 
 def generate_json(output_pdf_path, output_folder):
     """Extract text from a searchable PDF and save it as a JSON file."""
@@ -61,6 +77,13 @@ def create_searchable_pdf(input_file_path, output_folder):
             ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True)
 
         elif extension in ['jpeg', 'jpg', 'png', 'tiff', 'tif']:
+            # Handle alpha channel issue for PNG images
+            if extension == "png":
+                input_file_path = remove_alpha_channel(input_file_path)
+                if not input_file_path:
+                    print(f"Skipping {input_file_path} due to image processing error.")
+                    return
+
             ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300)
 
         print(f"Searchable PDF created successfully: {output_pdf_path}")
@@ -91,3 +114,4 @@ output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
 
 # Process all files in the input folder
 process_all_files(input_folder, output_folder)
+
