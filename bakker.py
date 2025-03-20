@@ -1,4 +1,4 @@
-
+⁸
 
 mrl1 = "P<USAGORDON<<STEVE<<<<<<<<<<<<<<<<<<<<<<<<<"
 mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
@@ -19,6 +19,9 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 # Set Ghostscript path
 gs_path = r"/home/ko19678/.conda/pkgs/ghostscript-10.04.0-h5888daf_0/bin"
 os.environ["PATH"] += os.pathsep + gs_path
+
+# Set OCR language: Japanese + English
+OCR_LANG = "jpn+eng"
 
 def remove_alpha_channel(image_path):
     """Convert PNG images with an alpha channel to RGB (removes transparency)."""
@@ -58,33 +61,41 @@ def generate_json(output_pdf_path, output_folder):
         output_json_path = os.path.join(output_folder, f"{os.path.basename(output_pdf_path).split('.')[0]}.json")
 
         with open(output_json_path, "w", encoding="utf-8") as json_file:
-            json.dump(words_data, json_file, indent=4)
+            json.dump(words_data, json_file, indent=4, ensure_ascii=False)  # Keep Japanese characters
 
         print(f"JSON file created successfully: {output_json_path}")
 
     except Exception as e:
         print(f"Error in generate_json: {e}")
 
-def create_searchable_pdf(input_file_path, output_folder):
+def create_searchable_pdf(input_file_path, output_folder, quality="medium"):
     """Convert a PDF or image into a searchable PDF and generate a JSON file."""
     try:
         extension = input_file_path.split('.')[-1].lower()
-        print(f"Processing file: {input_file_path} (Extension: {extension})")
+        print(f"Processing file: {input_file_path} (Extension: {extension}, Quality: {quality})")
 
         output_pdf_path = os.path.join(output_folder, f"{os.path.basename(input_file_path).split('.')[0]}.pdf")
 
+        # Define quality-specific parameters
+        quality_options = {
+            "high": {"deskew": True, "rotate_pages": True, "image_dpi": 400, "optimize": 1, "pdf_renderer": "hocr"},
+            "medium": {"deskew": True, "rotate_pages": True, "image_dpi": 300, "optimize": 2},
+            "low": {"deskew": False, "rotate_pages": False, "image_dpi": 150, "optimize": 3}
+        }
+
+        ocr_params = quality_options.get(quality, quality_options["medium"])  # Default to medium
+
         if extension in ['pdf']:
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True)
+            ocrmypdf.ocr(input_file_path, output_pdf_path, language=OCR_LANG, **ocr_params)
 
         elif extension in ['jpeg', 'jpg', 'png', 'tiff', 'tif']:
-            # Handle alpha channel issue for PNG images
             if extension == "png":
                 input_file_path = remove_alpha_channel(input_file_path)
                 if not input_file_path:
                     print(f"Skipping {input_file_path} due to image processing error.")
                     return
 
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300)
+            ocrmypdf.ocr(input_file_path, output_pdf_path, language=OCR_LANG, **ocr_params)
 
         print(f"Searchable PDF created successfully: {output_pdf_path}")
 
@@ -94,7 +105,7 @@ def create_searchable_pdf(input_file_path, output_folder):
     except Exception as e:
         print(f"Error in create_searchable_pdf: {e}")
 
-def process_all_files(input_folder, output_folder):
+def process_all_files(input_folder, output_folder, quality="medium"):
     """Read all PDFs and images from the input folder and process them."""
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -106,12 +117,14 @@ def process_all_files(input_folder, output_folder):
             extension = file_name.split('.')[-1].lower()
 
             if extension in ['pdf', 'jpeg', 'jpg', 'png', 'tiff', 'tif']:
-                create_searchable_pdf(file_path, output_folder)
+                create_searchable_pdf(file_path, output_folder, quality)
 
 # Define input and output folders
 input_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/input"
 output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
 
-# Process all files in the input folder
-process_all_files(input_folder, output_folder)
+# Select quality level: "high", "medium", or "low"
+quality = "high"  # Change this to "medium" or "low" as needed
 
+# Process all files in the input folder
+process_all_files(input_folder, output_folder, quality)
