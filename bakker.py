@@ -9,6 +9,9 @@ print(df)
 import ocrmypdf
 import pytesseract
 import pdfplumber
+import ocrmypdf
+import pytesseract
+import pdfplumber
 import json
 import os
 from PIL import Image
@@ -68,34 +71,26 @@ def generate_json(output_pdf_path, output_folder):
     except Exception as e:
         print(f"Error in generate_json: {e}")
 
-def create_searchable_pdf(input_file_path, output_folder, quality="medium"):
+def create_searchable_pdf(input_file_path, output_folder):
     """Convert a PDF or image into a searchable PDF and generate a JSON file."""
     try:
         extension = input_file_path.split('.')[-1].lower()
-        print(f"Processing file: {input_file_path} (Extension: {extension}, Quality: {quality})")
+        print(f"Processing file: {input_file_path} (Extension: {extension})")
 
         output_pdf_path = os.path.join(output_folder, f"{os.path.basename(input_file_path).split('.')[0]}.pdf")
 
-        # Define quality-specific parameters
-        quality_options = {
-            "high": {"deskew": True, "rotate_pages": True, "image_dpi": 400, "optimize": 1, "pdf_renderer": "hocr"},
-            "medium": {"deskew": True, "rotate_pages": True, "image_dpi": 300, "optimize": 2},
-            "low": {"deskew": False, "rotate_pages": False, "image_dpi": 150, "optimize": 3}
-        }
-
-        ocr_params = quality_options.get(quality, quality_options["medium"])  # Default to medium
-
         if extension in ['pdf']:
-            ocrmypdf.ocr(input_file_path, output_pdf_path, language=OCR_LANG, **ocr_params)
+            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, language=OCR_LANG)
 
         elif extension in ['jpeg', 'jpg', 'png', 'tiff', 'tif']:
+            # Handle alpha channel issue for PNG images
             if extension == "png":
                 input_file_path = remove_alpha_channel(input_file_path)
                 if not input_file_path:
                     print(f"Skipping {input_file_path} due to image processing error.")
                     return
 
-            ocrmypdf.ocr(input_file_path, output_pdf_path, language=OCR_LANG, **ocr_params)
+            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300, language=OCR_LANG)
 
         print(f"Searchable PDF created successfully: {output_pdf_path}")
 
@@ -105,7 +100,7 @@ def create_searchable_pdf(input_file_path, output_folder, quality="medium"):
     except Exception as e:
         print(f"Error in create_searchable_pdf: {e}")
 
-def process_all_files(input_folder, output_folder, quality="medium"):
+def process_all_files(input_folder, output_folder):
     """Read all PDFs and images from the input folder and process them."""
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -117,14 +112,12 @@ def process_all_files(input_folder, output_folder, quality="medium"):
             extension = file_name.split('.')[-1].lower()
 
             if extension in ['pdf', 'jpeg', 'jpg', 'png', 'tiff', 'tif']:
-                create_searchable_pdf(file_path, output_folder, quality)
+                create_searchable_pdf(file_path, output_folder)
 
 # Define input and output folders
 input_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/input"
 output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
 
-# Select quality level: "high", "medium", or "low"
-quality = "high"  # Change this to "medium" or "low" as needed
-
 # Process all files in the input folder
-process_all_files(input_folder, output_folder, quality)
+process_all_files(input_folder, output_folder)
+
