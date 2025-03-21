@@ -6,118 +6,91 @@ mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
 df = parse_mrz(mrl1, mrl2)
 print(df)
 
-import ocrmypdf
+import cv2
+import numpy as np
 import pytesseract
-import pdfplumber
-import ocrmypdf
-import pytesseract
-import pdfplumber
-import json
-import os
-from PIL import Image
+import math
 
-# Set Tesseract path
+# Set Tesseract path if required
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# Set Ghostscript path
-gs_path = r"/home/ko19678/.conda/pkgs/ghostscript-10.04.0-h5888daf_0/bin"
-os.environ["PATH"] += os.pathsep + gs_path
+def detect_rotation_angle(image):
+    """Detects the rotation angle using Tesseract OSD and Hough Transform."""
+    # Step 1: Use Tesseract OSD for orientation detection
+    osd = pytesseract.image_to_osd(image)
+    angle_osd = int(osd.split("\n")[1].split(":")[-1].strip())
 
-# Set OCR language: Japanese + English
-OCR_LANG = "jpn+eng"
+    # Step 2: Convert to grayscale and apply edge detection
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
 
-def remove_alpha_channel(image_path):
-    """Convert PNG images with an alpha channel to RGB (removes transparency)."""
-    try:
-        with Image.open(image_path) as img:
-            if img.mode == "RGBA":
-                print(f"Removing alpha channel from: {image_path}")
-                img = img.convert("RGB")
-                temp_image_path = os.path.join(os.path.dirname(image_path), "temp_" + os.path.basename(image_path))
-                img.save(temp_image_path)
-                return temp_image_path  # Return the new RGB image path
-            return image_path  # Return the original path if no alpha channel
-    except Exception as e:
-        print(f"Error processing image {image_path}: {e}")
-        return None
+    # Step 3: Detect lines using Hough Transform
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
 
-def generate_json(output_pdf_path, output_folder):
-    """Extract text from a searchable PDF and save it as a JSON file."""
-    try:
-        with pdfplumber.open(output_pdf_path) as pdf:
-            words_data = []
+    angles = []
+    if lines is not None:
+        for rho, theta in lines[:, 0]:
+            angle = (theta * 180 / np.pi) - 90  # Convert radians to degrees
+            if -45 < angle < 45:  # Filter relevant angles
+                angles.append(angle)
 
-            for page_number, page in enumerate(pdf.pages, start=1):
-                words = page.extract_words()
+    # Step 4: Compute final angle
+    angle_hough = np.median(angles) if angles else 0
+    final_angle = angle_osd if abs(angle_osd) > abs(angle_hough) else angle_hough
 
-                for word in words:
-                    word_info = {
-                        "word": word["text"],
-                        "x": int(word["x0"]),
-                        "y": int(word["top"]),
-                        "width": int(word["x1"]) - int(word["x0"]),
-                        "height": int(word["bottom"]) - int(word["top"]),
-                        "page": page_number
-                    }
-                    words_data.append(word_info)
+    return final_angle
 
-        output_json_path = os.path.join(output_folder, f"{os.path.basename(output_pdf_path).split('.')[0]}.json")
+def correct_rotation(image):
+    """Corrects rotation based on detected angle."""
+    angle = detect_rotation_angle(image)
+    if abs(angle) > 0.5:  # Only rotate if angle is significant
+        (h, w) = image.shape[:2]
+        center = (w // 2, h // 2)
+        M = cv2.getRotationMatrix2D(center, -angle, 1.0)
+        rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+        return rotated
+    return image
 
-        with open(output_json_path, "w", encoding="utf-8") as json_file:
-            json.dump(words_data, json_file, indent=4, ensure_ascii=False)  # Keep Japanese characters
+def deskew_pca(image):
+    """Corrects skew using PCA (Principal Component Analysis)."""
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        print(f"JSON file created successfully: {output_json_path}")
+    # Apply binary threshold
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    except Exception as e:
-        print(f"Error in generate_json: {e}")
+    # Find contours
+    coords = np.column_stack(np.where(binary > 0))
+    angle = cv2.minAreaRect(coords)[-1]
 
-def create_searchable_pdf(input_file_path, output_folder):
-    """Convert a PDF or image into a searchable PDF and generate a JSON file."""
-    try:
-        extension = input_file_path.split('.')[-1].lower()
-        print(f"Processing file: {input_file_path} (Extension: {extension})")
+    # Fix angles returned by OpenCV
+    if angle < -45:
+        angle = -(90 + angle)
+    else:
+        angle = -angle
 
-        output_pdf_path = os.path.join(output_folder, f"{os.path.basename(input_file_path).split('.')[0]}.pdf")
+    # Rotate image to deskew
+    (h, w) = image.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+    deskewed = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
-        if extension in ['pdf']:
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, language=OCR_LANG)
+    return deskewed
 
-        elif extension in ['jpeg', 'jpg', 'png', 'tiff', 'tif']:
-            # Handle alpha channel issue for PNG images
-            if extension == "png":
-                input_file_path = remove_alpha_channel(input_file_path)
-                if not input_file_path:
-                    print(f"Skipping {input_file_path} due to image processing error.")
-                    return
+def preprocess_image(image_path, output_path="final_corrected.jpg"):
+    """Loads image, applies advanced skew and rotation correction, and saves output."""
+    image = cv2.imread(image_path)
 
-            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300, language=OCR_LANG)
+    # Step 1: Deskew using PCA
+    image = deskew_pca(image)
 
-        print(f"Searchable PDF created successfully: {output_pdf_path}")
+    # Step 2: Correct Rotation using OSD + Hough Lines
+    image = correct_rotation(image)
 
-        # Generate JSON file
-        generate_json(output_pdf_path, output_folder)
+    # Save the corrected image
+    cv2.imwrite(output_path, image)
+    return image
 
-    except Exception as e:
-        print(f"Error in create_searchable_pdf: {e}")
-
-def process_all_files(input_folder, output_folder):
-    """Read all PDFs and images from the input folder and process them."""
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    for file_name in os.listdir(input_folder):
-        file_path = os.path.join(input_folder, file_name)
-
-        if os.path.isfile(file_path):
-            extension = file_name.split('.')[-1].lower()
-
-            if extension in ['pdf', 'jpeg', 'jpg', 'png', 'tiff', 'tif']:
-                create_searchable_pdf(file_path, output_folder)
-
-# Define input and output folders
-input_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/input"
-output_folder = r"/home/ko19678/japan_pipeline/pdfmyocr/output"
-
-# Process all files in the input folder
-process_all_files(input_folder, output_folder)
+# Example Usage
+preprocess_image("skewed_rotated_text.jpg", "final_corrected_text.jpg")
 
