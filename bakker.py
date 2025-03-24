@@ -1,24 +1,52 @@
 
 
-from PIL import Image
+import os
+import cv2
+import random
 
-def images_to_pdf(image_folder, output_pdf):
-    images = [os.path.join(image_folder, img) for img in os.listdir(image_folder) if img.lower().endswith((".png", ".jpg", ".jpeg"))]
-    images.sort()  # Sort images to maintain order
+# Input and Output directories
+input_folder = "path/to/input/folder"   # Replace with your input folder path
+output_folder = "path/to/output/folder" # Replace with your output folder path
 
-    if not images:
-        print("No images found!")
-        return
+# Ensure output folder exists
+os.makedirs(output_folder, exist_ok=True)
 
-    # Open first image and convert it to RGB
-    first_image = Image.open(images[0]).convert("RGB")
-    image_list = [Image.open(img).convert("RGB") for img in images[1:]]
+# Rotation angles
+rotation_angles = [30, 70, 90, 180, 220]
 
-    # Save as a PDF
-    first_image.save(output_pdf, save_all=True, append_images=image_list)
-    print(f"PDF saved: {output_pdf}")
+# Get list of image files
+image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff'))]
 
-# Example Usage
-image_folder = "path/to/output/images"
-output_pdf = "path/to/final_output.pdf"
-images_to_pdf(image_folder, output_pdf)
+# Process images
+for img_file in image_files:
+    img_path = os.path.join(input_folder, img_file)
+    
+    # Read the image
+    image = cv2.imread(img_path)
+    if image is None:
+        print(f"Skipping {img_file}, unable to read image.")
+        continue
+
+    # Randomly decide whether to rotate
+    if random.choice([True, False]):
+        angle = random.choice(rotation_angles)
+        
+        # Get image dimensions and center
+        (h, w) = image.shape[:2]
+        center = (w // 2, h // 2)
+
+        # Rotation matrix
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+        # Save rotated image
+        output_path = os.path.join(output_folder, f"rotated_{angle}_{img_file}")
+        cv2.imwrite(output_path, rotated)
+        print(f"Rotated {img_file} by {angle}° and saved to {output_path}")
+    else:
+        # Save without rotating
+        output_path = os.path.join(output_folder, img_file)
+        cv2.imwrite(output_path, image)
+        print(f"Copied {img_file} without rotation.")
+
+print("Processing completed!")
