@@ -1,98 +1,28 @@
 
-
-import fitz  # PyMuPDF
-import cv2
-import numpy as np
 import os
-from scipy.ndimage import interpolation as inter
-import aspose.ocr as ocr
+from PyPDF2 import PdfReader, PdfWriter
 
-# Instantiate Aspose.OCR API
-api = ocr.AsposeOCR()
+def extract_pages_pypdf(pdf_path):
+    # Get the folder and filename
+    folder = os.path.dirname(pdf_path)
+    file_name = os.path.splitext(os.path.basename(pdf_path))[0]
 
-# Define temporary and output directories
-TEMP_FOLDER = r"C:\temp\pdf_pages"
-OUTPUT_FOLDER = r"C:\temp\output"
-os.makedirs(TEMP_FOLDER, exist_ok=True)  # Ensure temp folder exists
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)  # Ensure output folder exists
+    # Open the PDF
+    reader = PdfReader(pdf_path)
 
-def correct_skew(image, angle):
-    """ Rotates the image to correct skew """
-    (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, angle, 1)
-    corrected = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return corrected
+    for page_num in range(len(reader.pages)):
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_num])
 
-def extract_pdf_pages(pdf_path):
-    """ Extracts pages from PDF and saves them as images in TEMP_FOLDER """
-    if not os.path.exists(pdf_path):
-        print(f"❌ Error: File '{pdf_path}' not found.")
-        return []
-
-    try:
-        pdf_document = fitz.open(pdf_path)
-    except Exception as e:
-        print(f"❌ Error: Cannot open PDF - {e}")
-        return []
-
-    saved_images = []
-
-    for page_num in range(len(pdf_document)):
-        print(f"Extracting page {page_num + 1}...")
+        # Save the extracted page
+        output_filename = os.path.join(folder, f"{file_name}_page_{page_num + 1}.pdf")
+        with open(output_filename, "wb") as output_pdf:
+            writer.write(output_pdf)
         
-        # Convert PDF page to image
-        pix = pdf_document[page_num].get_pixmap()
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+        print(f"Saved: {output_filename}")
 
-        # Convert to BGR for OpenCV
-        if pix.n == 3:
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        elif pix.n == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-
-        # Save temporary image
-        temp_image_path = os.path.join(TEMP_FOLDER, f"Page_{page_num + 1}.jpg")
-        cv2.imwrite(temp_image_path, img)
-        saved_images.append(temp_image_path)
-
-    return saved_images
-
-def process_images(image_paths):
-    """ Processes extracted images and saves corrected versions """
-    for image_path in image_paths:
-        print(f"Processing {image_path}...")
-
-        # Perform skew detection using Aspose.OCR
-        try:
-            ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-            ocr_input.add(image_path)
-            angles = api.calculate_skew(ocr_input)
-        except RuntimeError as e:
-            print(f"⚠ Warning: Skew detection failed for {image_path} - {e}")
-            continue
-
-        # Load image with OpenCV
-        img = cv2.imread(image_path)
-
-        if angles and img is not None:
-            skew_angle = angles[0].angle  # Get skew angle
-            print(f"{image_path}: Skew Angle Detected = {skew_angle:.2f}°")
-            img = correct_skew(img, -skew_angle)  # Correct skew
-        else:
-            print(f"{image_path}: No skew detected")
-
-        # Save corrected image in output folder
-        output_image_path = os.path.join(OUTPUT_FOLDER, os.path.basename(image_path))
-        cv2.imwrite(output_image_path, img)
-        print(f"✅ Skew-corrected image saved at: {output_image_path}")
-
-if __name__ == "__main__":
-    # File path
-    file_path = r"\\apachlowinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\Skewed- Payment advice.pdf"
-
-    if file_path.lower().endswith(".pdf"):
-        images = extract_pdf_pages(file_path)  # Extract pages as images
-        process_images(images)  # Process and correct skew for each image
-    else:
-        print("❌ Error: Please provide a PDF file.")
+# Example usage
+input_folder = "path/to/input/folder"
+for file in os.listdir(input_folder):
+    if file.lower().endswith(".pdf"):
+        extract_pages_pypdf(os.path.join(input_folder, file))
