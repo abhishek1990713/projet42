@@ -3,6 +3,7 @@
 mrl1 = 
 
 
+import os
 import cv2
 import numpy as np
 import aspose.ocr as ecr  # Aspose OCR for skew detection
@@ -20,6 +21,10 @@ api = ecr.AsposeOCR()
 
 # File path (Update this to your file location)
 file_path = r"\\apachlowinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\Skewed- Payment advice.tiff"
+
+# Define output folder
+output_folder = r"\\apachlowinrv7933\odp\Senduran\New folder\Process\Testing\Output"
+os.makedirs(output_folder, exist_ok=True)  # Create folder if it doesn't exist
 
 # Detect if it's an image, TIFF, or PDF
 if file_path.lower().endswith(".pdf"):
@@ -49,16 +54,18 @@ if angles:
         else:
             corrected_image = correct_skew(image, best_angle)
 
-            # Save and display corrected image
-            save_path = file_path.replace(".", "_corrected.")
+            # Save the corrected image in the output folder
+            file_name = os.path.basename(file_path)
+            save_path = os.path.join(output_folder, f"corrected_{file_name}")
             cv2.imwrite(save_path, corrected_image)
 
-            cv2.imshow("Corrected Image", corrected_image)
             print("Corrected image saved at:", save_path)
 
+            cv2.imshow("Corrected Image", corrected_image)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
     else:
         print("PDF detected! Skew correction for PDFs requires further processing.")
 else:
     print("No skew detected.")
+
