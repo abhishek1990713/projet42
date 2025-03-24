@@ -9,6 +9,10 @@ from PIL import Image
 # Instantiate Aspose.OCR API
 api = ocr.AsposeOCR()
 
+# Change temp path to a writable directory
+TEMP_DIR = os.path.join(os.environ['TEMP'], "skew_correction")  
+os.makedirs(TEMP_DIR, exist_ok=True)  
+
 def correct_skew(image, angle):
     """ Rotates the image to correct skew """
     (h, w) = image.shape[:2]
@@ -19,10 +23,18 @@ def correct_skew(image, angle):
 
 def process_pdf(file_path, output_pdf_path):
     """ Processes multi-page PDF for skew detection and correction """
-    pdf_document = fitz.open(file_path)
-    output_images = []
-    temp_image_path = r"C:\temp_skewed_image.jpg"  # Temporary image storage
+    if not os.path.exists(file_path):
+        print(f"❌ Error: File '{file_path}' not found.")
+        return
 
+    try:
+        pdf_document = fitz.open(file_path)
+    except Exception as e:
+        print(f"❌ Error: Cannot open PDF - {e}")
+        return
+
+    output_images = []
+    
     for page_num in range(len(pdf_document)):
         print(f"Processing page {page_num + 1}...")
 
@@ -36,13 +48,18 @@ def process_pdf(file_path, output_pdf_path):
         elif pix.n == 4:
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
 
-        # Save temporary image
+        # Save temporary image in writable temp folder
+        temp_image_path = os.path.join(TEMP_DIR, f"page_{page_num + 1}.jpg")
         cv2.imwrite(temp_image_path, img)
 
         # Perform skew detection using AsposeOCR
-        ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-        ocr_input.add(temp_image_path)  # Use the saved image file
-        angles = api.calculate_skew(ocr_input)
+        try:
+            ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+            ocr_input.add(temp_image_path)  
+            angles = api.calculate_skew(ocr_input)
+        except RuntimeError as e:
+            print(f"⚠ Warning: Skew detection failed on page {page_num + 1} - {e}")
+            continue
 
         if angles:
             skew_angle = angles[0].angle  # Get skew angle for this page
@@ -55,32 +72,35 @@ def process_pdf(file_path, output_pdf_path):
         img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         output_images.append(img_pil)
 
-    # Save all corrected pages as a new PDF
-    output_images[0].save(output_pdf_path, save_all=True, append_images=output_images[1:])
-
-    # Remove temporary image file
-    os.remove(temp_image_path)
-
-    print(f"\n✅ Skew-corrected PDF saved at: {output_pdf_path}")
+    if output_images:
+        # Save all corrected pages as a new PDF
+        output_images[0].save(output_pdf_path, save_all=True, append_images=output_images[1:])
+        print(f"\n✅ Skew-corrected PDF saved at: {output_pdf_path}")
 
 def process_image(file_path, output_image_path):
     """ Processes a single image for skew detection and correction """
-    print(f"Processing image: {file_path}")
+    if not os.path.exists(file_path):
+        print(f"❌ Error: File '{file_path}' not found.")
+        return
 
-    # Read image
-    img = cv2.imread(file_path)
+    print(f"Processing image: {file_path}")
     
+    img = cv2.imread(file_path)
     if img is None:
         print("❌ Error: Unable to read the image file!")
         return
 
     # Perform skew detection using AsposeOCR
-    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-    ocr_input.add(file_path)
-    angles = api.calculate_skew(ocr_input)
+    try:
+        ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+        ocr_input.add(file_path)
+        angles = api.calculate_skew(ocr_input)
+    except RuntimeError as e:
+        print(f"⚠ Warning: Skew detection failed - {e}")
+        return
 
     if angles:
-        skew_angle = angles[0].angle  # Get skew angle for this image
+        skew_angle = angles[0].angle  
         print(f"Skew Angle Detected = {skew_angle:.2f}°")
         img = correct_skew(img, -skew_angle)  # Correct skew
     else:
@@ -95,11 +115,12 @@ if __name__ == "__main__":
     file_path = r"\\apachlowinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\Skewed- Payment advice.pdf"
     output_folder = r"\\apachlowinrv7933\odp\Senduran\New folder\Process\Testing\Output"
 
-    # Determine if the input is a PDF or an image
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
     if file_path.lower().endswith(".pdf"):
         output_pdf_path = os.path.join(output_folder, "Corrected.pdf")
         process_pdf(file_path, output_pdf_path)
     else:
         output_image_path = os.path.join(output_folder, "Corrected.png")
         process_image(file_path, output_image_path)
-
