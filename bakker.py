@@ -1,7 +1,8 @@
 ⁸
 
 mrl1 = "P<USAGORDON<<STEVE<<<<<<<<<<<<<<<<<<<<<<<<<"
-mrl2 = "75726045510USA4245682M8312915724<2126<<<<<<<"
+mrl2 = 
+
 
 import cv2
 import numpy as np
@@ -20,6 +21,21 @@ def preprocess_for_osd(image):
         gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
 
     return gray
+
+def detect_hough_angle(image):
+    """Fallback method: Detect rotation using Hough Transform."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
+
+    angles = []
+    if lines is not None:
+        for rho, theta in lines[:, 0]:
+            angle = (theta * 180 / np.pi) - 90
+            if -45 < angle < 45:  # Consider valid angles
+                angles.append(angle)
+
+    return np.median(angles) if angles else 0
 
 def detect_rotation_angle(image):
     """Detects rotation angle while handling flipped images correctly."""
