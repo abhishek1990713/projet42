@@ -7,31 +7,72 @@ from pathlib import Path
 import aspose.ocr as ocr
 
 
-def process_document(file_path, output_dir):
+def process_file(file_path):
+    """
+    Processes a single PDF or image file.
+    - PDFs → Outputs a processed PDF
+    - Images (JPG, PNG, TIF, etc.) → Outputs a processed TIFF file
+    """
     input_path = Path(file_path)
-    output_file = output_dir / f"{input_path.stem}_processed.pdf"
-
     file_ext = input_path.suffix.lower()
-    processed_images = []
+    output_path = input_path.with_stem(input_path.stem + "_processed")
 
-    if file_ext == '.pdf':
-        images = pdf2image.convert_from_path(file_path, dpi=300)
-        if not images:
-            raise ValueError(f"Failed to extract images from {file_path}")
-
-        for img in images:
-            img = process_image(img)
-            processed_images.append(img)
-
-        save_as_pdf(processed_images, output_file)
-        print(f"Processed: {file_path} -> {output_file}")
+    if file_ext == ".pdf":
+        process_pdf(file_path, output_path.with_suffix(".pdf"))
+    elif file_ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
+        process_image_file(file_path, output_path.with_suffix(".tiff"))
+    else:
+        print(f"Unsupported file format: {file_ext}")
 
 
-def save_as_pdf(images, output_path):
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
+def process_pdf(pdf_path, output_pdf):
+    """Extracts images from a PDF, applies skew correction, and saves as a processed PDF."""
+    images = pdf2image.convert_from_path(pdf_path, dpi=300)
+    
+    if not images:
+        raise ValueError(f"Failed to extract images from {pdf_path}")
+
+    processed_images = [process_image(img) for img in images]
+    
+    save_as_pdf(processed_images, output_pdf)
+    print(f"Processed PDF: {pdf_path} -> {output_pdf}")
+
+
+def process_image_file(image_path, output_tiff):
+    """Processes a single image file, applies skew correction, and saves as TIFF."""
+    image = Image.open(image_path)
+    processed_image = process_image(image)
+    processed_image.save(output_tiff, format="TIFF")
+    print(f"Processed Image: {image_path} -> {output_tiff}")
+
+
+def process_image(image):
+    """Applies OCR-based skew correction to an image."""
+    api = ocr.AsposeOcr()
+    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+
+    temp_image_path = "temp_image.png"
+    image.save(temp_image_path)
+
+    ocr_input.add(temp_image_path)
+    angles = api.calculate_skew(ocr_input)
+
+    img = cv2.imread(temp_image_path)
+
+    if angles and img is not None:
+        skew_angle = angles[0].angle  # Get detected skew angle
+        print(f"Skew Angle Detected: {skew_angle:.2f}°")
+        img = correct_skew(img, skew_angle)
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
+    else:
+        print("No skew detected.")
+        img = image
+
+    return img
 
 
 def correct_skew(image, angle):
+    """Corrects skew in an image using OpenCV rotation."""
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
 
@@ -49,41 +90,21 @@ def correct_skew(image, angle):
     return corrected
 
 
-def process_image(image):
-    api = ocr.AsposeOcr()
-    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-
-    image_path = "temp_image.png"
-    image.save(image_path)
-
-    ocr_input.add(image_path)
-    angles = api.calculate_skew(ocr_input)
-
-    img = cv2.imread(image_path)
-
-    if angles and img is not None:
-        skew_angle = angles[0].angle  # Get skew angle
-        print(f"{image_path}: Skew Angle Detected = {skew_angle:.2f}")
-        img = correct_skew(img, skew_angle)  # Correct skew
-        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
-    else:
-        print(f"{image_path}: No skew detected")
-        img = image
-
-    return img
+def save_as_pdf(images, output_path):
+    """Saves a list of PIL images as a PDF."""
+    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
 
 
 def main():
-    input_folder = Path(r"\\apachkwinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\skewedpdf")
-    output_folder = Path(r"C:\CitiDev\pdfmyocr\output")
+    file_path = input("Enter the full path of the PDF or image: ").strip()
 
-    # Ensure output folder exists
-    output_folder.mkdir(parents=True, exist_ok=True)
+    if not os.path.exists(file_path):
+        print("Error: File does not exist!")
+        return
 
-    # Process all PDFs in input folder
-    for pdf_file in input_folder.glob("*.pdf"):
-        process_document(pdf_file, output_folder)
+    process_file(file_path)
 
 
 if __name__ == "__main__":
     main()
+
