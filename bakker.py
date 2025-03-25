@@ -1,5 +1,3 @@
-
-
 import os
 import numpy as np
 from PIL import Image
@@ -21,12 +19,8 @@ def process_document(file_path, output_dir=None):
     file_ext = input_path.suffix.lower()
     
     if file_ext in ['.png', '.tiff', '.tif']:
-        # Convert PNG to a standard format if needed
-        fixed_image_path = os.path.join(output_dir, f"{input_path.stem}_fixed.png")
-        convert_png(file_path, fixed_image_path)
-
         # Process single image
-        img = Image.open(fixed_image_path)
+        img = Image.open(file_path)
         processed_img = process_image(img)
 
         output_path = os.path.join(output_dir, f"{input_path.stem}_processed{file_ext}")
@@ -48,13 +42,6 @@ def process_document(file_path, output_dir=None):
 
     print(f"Processed file saved at: {output_path}")
     return output_path
-
-
-def convert_png(input_path, output_path):
-    """Converts PNG to a standard format to avoid version issues."""
-    img = Image.open(input_path)
-    img = img.convert("RGB")  # Convert to a standard format
-    img.save(output_path, format="PNG")
 
 
 def save_as_pdf(images, output_path):
@@ -82,8 +69,8 @@ def correct_skew(image, angle):
 
 
 def detect_skew_opencv(image):
-    """Uses OpenCV to detect and correct skew instead of AsposeOCR."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    """Uses OpenCV to detect and correct skew without saving a temporary file."""
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
 
@@ -99,16 +86,11 @@ def detect_skew_opencv(image):
     return image
 
 
-def process_image(image):
-    """Applies OpenCV-based skew detection and correction, then returns the processed image."""
-    image_path = "temp_image.png"
-    image.save(image_path)
-
-    img = cv2.imread(image_path)
-
-    if img is not None:
-        img = detect_skew_opencv(img)  # Use OpenCV instead of AsposeOCR
-        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
+def process_image(pil_image):
+    """Applies OpenCV-based skew detection and correction without saving temp files."""
+    img = np.array(pil_image)  # Convert PIL to NumPy array (OpenCV format)
+    img = detect_skew_opencv(img)  # Use OpenCV for skew detection and correction
+    img = Image.fromarray(img)  # Convert back to PIL Image
 
     return img
 
