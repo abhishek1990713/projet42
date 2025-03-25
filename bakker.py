@@ -64,15 +64,12 @@ def detect_skew_aspose(image):
     """Uses AsposeOCR to detect and correct skew."""
     api = ocr.AsposeOcr()
     ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-    
-    # Convert PIL image to byte array (AsposeOCR needs a file buffer)
-    img_byte_array = np.array(image)
-    success, encoded_image = cv2.imencode('.png', img_byte_array)
-    
-    if not success:
-        return image  # Return original image if conversion fails
-    
-    ocr_input.add(encoded_image.tobytes())  # Add image to OCR input
+
+    # ✅ Convert OpenCV image to AsposeOCR compatible format
+    h, w = image.shape[:2]
+    aspose_image = ocr.OcrImage(image, w, h)  # ✅ Use OcrImage instead of byte array
+
+    ocr_input.add(aspose_image)  # ✅ Add image to OCR input
     angles = api.calculate_skew(ocr_input)
 
     if angles:
@@ -100,3 +97,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
