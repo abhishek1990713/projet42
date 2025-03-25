@@ -1,100 +1,125 @@
+import ocrmypdf
+import pytesseract
+import pdfplumber
+import json
 import os
-import numpy as np
-from PIL import Image
-import pdf2image
-import cv2
+import pandas as pd
 from pathlib import Path
-import aspose.ocr as ocr  # ✅ Add AsposeOCR
+from time import time
+from script_aspose_ocr import process_document  # Ensure this function exists in script_aspose_ocr.py
 
-def process_document(file_path, output_dir=None):
-    input_path = Path(file_path)
-    if output_dir is None:
-        output_dir = input_path.parent / f"{input_path.stem}_processed"
-    
-    os.makedirs(output_dir, exist_ok=True)
-    file_ext = input_path.suffix.lower()
-    
-    if file_ext in ['.png', '.tiff', '.tif']:
-        img = Image.open(file_path)
-        processed_img = process_image(img)
+# Set Tesseract-OCR path
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-        output_path = os.path.join(output_dir, f"{input_path.stem}_processed{file_ext}")
-        processed_img.save(output_path)
-
-    elif file_ext == '.pdf':
-        images = pdf2image.convert_from_path(file_path, dpi=300)
-        if not images:
-            raise ValueError("Failed to extract images from PDF")
-
-        processed_images = [process_image(img) for img in images]
-
-        output_path = os.path.join(output_dir, f"{input_path.stem}_processed.pdf")
-        save_as_pdf(processed_images, output_path)
-    
-    else:
-        raise ValueError("Unsupported file format. Only PNG, TIFF, and PDF are allowed.")
-
-    print(f"Processed file saved at: {output_path}")
-    return output_path
+# Set Ghostscript path for Linux (if needed)
+gs_path = r"/home/ko19678/.conda/pkgs/ghostscript-10.04.0-h5888daf_0/bin"
+os.environ["PATH"] += os.pathsep + gs_path
 
 
-def save_as_pdf(images, output_path):
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
+def generate_json(output_pdf_path, output_folder):
+    """Extracts text and coordinates from a searchable PDF and saves to JSON."""
+    try:
+        with pdfplumber.open(output_pdf_path) as pdf:
+            words_data = []
+            for page_number, page in enumerate(pdf.pages, start=1):
+                words = page.extract_words()
+                for word in words:
+                    word_info = {
+                        "word": word["text"],
+                        "x": int(word["x0"]),
+                        "y": int(word["top"]),
+                        "width": int(word["x1"]) - int(word["x0"]),
+                        "height": int(word["bottom"]) - int(word["top"]),
+                        "page": page_number
+                    }
+                    words_data.append(word_info)
+
+        output_json_path = os.path.join(output_folder, f"{Path(output_pdf_path).stem}.json")
+        with open(output_json_path, "w", encoding="utf-8") as json_file:
+            json.dump(words_data, json_file, indent=4, ensure_ascii=False)
+
+        print(f"JSON file created: {output_json_path}")
+    except Exception as e:
+        print(f"Error generating JSON: {e}")
 
 
-def correct_skew(image, angle):
-    (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
+def create_searchable_pdf(input_file_path, output_folder):
+    """Converts an image or non-searchable PDF to a searchable PDF."""
+    try:
+        extension = input_file_path.split('.')[-1].lower()
+        print(f"Processing file: {input_file_path} (Extension: {extension})")
 
-    abs_cos = abs(np.cos(np.radians(angle)))
-    abs_sin = abs(np.sin(np.radians(angle)))
+        output_pdf_path = os.path.join(output_folder, f"{Path(input_file_path).stem}_ocrmypdf.pdf")
 
-    bound_w = int(h * abs_sin + w * abs_cos)
-    bound_h = int(h * abs_cos + w * abs_sin)
+        if extension in ['pdf']:
+            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True)
+        elif extension in ['jpeg', 'tiff', 'tif', 'jpg', 'png']:
+            ocrmypdf.ocr(input_file_path, output_pdf_path, deskew=True, force_ocr=True, rotate_pages=True, image_dpi=300, pdf_renderer="hocr")
+        else:
+            print(f"Unsupported file type: {extension}")
+            return None
 
-    M = cv2.getRotationMatrix2D(center, angle, 1)
-    M[0, 2] += (bound_w / 2) - center[0]
-    M[1, 2] += (bound_h / 2) - center[1]
+        print(f"Searchable PDF created: {output_pdf_path}")
+        return output_pdf_path
 
-    corrected = cv2.warpAffine(image, M, (bound_w, bound_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return corrected
-
-
-def detect_skew_aspose(image):
-    """Uses AsposeOCR to detect and correct skew."""
-    api = ocr.AsposeOcr()
-    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
-
-    # ✅ Convert OpenCV image to AsposeOCR compatible format
-    h, w = image.shape[:2]
-    aspose_image = ocr.OcrImage(image, w, h)  # ✅ Use OcrImage instead of byte array
-
-    ocr_input.add(aspose_image)  # ✅ Add image to OCR input
-    angles = api.calculate_skew(ocr_input)
-
-    if angles:
-        skew_angle = angles[0].angle  # Get skew angle
-        return correct_skew(image, skew_angle)
-    
-    return image  # No skew detected
+    except Exception as e:
+        print(f"Error creating searchable PDF: {e}")
+        return None
 
 
-def process_image(pil_image):
-    """Uses AsposeOCR for skew detection & correction."""
-    img = np.array(pil_image)  # Convert PIL to NumPy array (OpenCV format)
-    img = detect_skew_aspose(img)  # ✅ Use AsposeOCR to detect skew
-    img = Image.fromarray(img)  # Convert back to PIL Image
+# Define input/output directories
+input_folder_path = r"/home/ko19678/japan_pipeline/rotate/input"
+output_folder = r"/home/ko19678/japan_pipeline/rotate/output"
 
-    return img
+# Ensure output folder exists
+os.makedirs(output_folder, exist_ok=True)
 
+# Track execution times
+execution_data = []
 
-def main():
-    input_file = r"\\apachkwinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\skewedpdf\@@@@@@@2661910562039_FBM"
-    output_folder = r"C:\CitiDev\pdfmyocr\output"
+# Process each file in the input folder
+for file_name in os.listdir(input_folder_path):
+    if os.path.isfile(os.path.join(input_folder_path, file_name)):
+        print(f"Processing file: {file_name}")
 
-    process_document(input_file, output_folder)
+        input_file_path = os.path.join(input_folder_path, file_name)
 
+        # Step 1: Rotation Correction using Aspose OCR
+        rotation_start_time = time()
+        rotation_corrected_file = process_document(input_file_path, output_folder)  # Calls script_aspose_ocr.py
+        rotation_end_time = time()
+        rotation_time = round(rotation_end_time - rotation_start_time, 2)
 
-if __name__ == "__main__":
-    main()
+        print(f"Rotation correction completed for {file_name} in {rotation_time} seconds")
 
+        # Step 2: Convert to Searchable PDF
+        pdf_start_time = time()
+        output_pdf_path = create_searchable_pdf(rotation_corrected_file, output_folder)
+        pdf_end_time = time()
+        pdf_time = round(pdf_end_time - pdf_start_time, 2)
+
+        if output_pdf_path:
+            print(f"Searchable PDF created for {file_name} in {pdf_time} seconds")
+
+            # Step 3: Generate JSON Output
+            json_start_time = time()
+            generate_json(output_pdf_path, output_folder)
+            json_end_time = time()
+            json_time = round(json_end_time - json_start_time, 2)
+
+            print(f"JSON extraction completed for {file_name} in {json_time} seconds")
+
+            # Step 4: Store execution times
+            execution_data.append({
+                "fileName": file_name,
+                "RotationCorrectionTime": rotation_time,
+                "PdfExecutionTime": pdf_time,
+                "JsonExecutionTime": json_time
+            })
+
+# Save execution times to CSV
+df = pd.DataFrame(execution_data)
+csv_path = os.path.join(output_folder, "execution_times.csv")
+df.to_csv(csv_path, index=False)
+
+print(f"Execution times saved to {csv_path}")
