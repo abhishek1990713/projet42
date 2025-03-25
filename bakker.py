@@ -4,22 +4,17 @@ from PIL import Image
 import pdf2image
 import cv2
 from pathlib import Path
+import aspose.ocr as ocr  # ✅ Add AsposeOCR
 
 def process_document(file_path, output_dir=None):
-    """
-    Processes a document (PDF, PNG, TIFF) and saves the corrected output in the same format.
-    """
     input_path = Path(file_path)
-    
     if output_dir is None:
         output_dir = input_path.parent / f"{input_path.stem}_processed"
     
     os.makedirs(output_dir, exist_ok=True)
-
     file_ext = input_path.suffix.lower()
     
     if file_ext in ['.png', '.tiff', '.tif']:
-        # Process single image
         img = Image.open(file_path)
         processed_img = process_image(img)
 
@@ -27,7 +22,6 @@ def process_document(file_path, output_dir=None):
         processed_img.save(output_path)
 
     elif file_ext == '.pdf':
-        # Process multiple pages in a PDF
         images = pdf2image.convert_from_path(file_path, dpi=300)
         if not images:
             raise ValueError("Failed to extract images from PDF")
@@ -45,12 +39,10 @@ def process_document(file_path, output_dir=None):
 
 
 def save_as_pdf(images, output_path):
-    """Saves multiple processed images as a PDF."""
     images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
 
 
 def correct_skew(image, angle):
-    """Corrects skew in an image using the detected angle."""
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
 
@@ -68,28 +60,32 @@ def correct_skew(image, angle):
     return corrected
 
 
-def detect_skew_opencv(image):
-    """Uses OpenCV to detect and correct skew without saving a temporary file."""
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
+def detect_skew_aspose(image):
+    """Uses AsposeOCR to detect and correct skew."""
+    api = ocr.AsposeOcr()
+    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+    
+    # Convert PIL image to byte array (AsposeOCR needs a file buffer)
+    img_byte_array = np.array(image)
+    success, encoded_image = cv2.imencode('.png', img_byte_array)
+    
+    if not success:
+        return image  # Return original image if conversion fails
+    
+    ocr_input.add(encoded_image.tobytes())  # Add image to OCR input
+    angles = api.calculate_skew(ocr_input)
 
-    if lines is not None:
-        angles = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
-            angles.append(angle)
-
-        skew_angle = np.median(angles)
-        return correct_skew(image, skew_angle)  # Correct skew
-    return image
+    if angles:
+        skew_angle = angles[0].angle  # Get skew angle
+        return correct_skew(image, skew_angle)
+    
+    return image  # No skew detected
 
 
 def process_image(pil_image):
-    """Applies OpenCV-based skew detection and correction without saving temp files."""
+    """Uses AsposeOCR for skew detection & correction."""
     img = np.array(pil_image)  # Convert PIL to NumPy array (OpenCV format)
-    img = detect_skew_opencv(img)  # Use OpenCV for skew detection and correction
+    img = detect_skew_aspose(img)  # ✅ Use AsposeOCR to detect skew
     img = Image.fromarray(img)  # Convert back to PIL Image
 
     return img
