@@ -6,85 +6,64 @@ from PIL import Image
 import pdf2image
 import cv2
 from pathlib import Path
-import aspose.ocr as ocr
-from io import BytesIO
 
-
-def process_file(file_path):
+def process_document(file_path, output_dir=None):
     """
-    Processes a single PDF or image file.
-    - PDFs → Outputs a processed PDF
-    - Images (JPG, PNG, TIF, etc.) → Outputs a processed image in the same format
+    Processes a document (PDF, PNG, TIFF) and saves the corrected output in the same format.
     """
     input_path = Path(file_path)
-    file_ext = input_path.suffix.lower()
-
-    output_path = input_path.parent / f"{input_path.stem}_processed{file_ext}"
-
-    if file_ext == ".pdf":
-        process_pdf(file_path, output_path)
-    elif file_ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
-        process_image_file(file_path, output_path)
-    else:
-        raise ValueError(f"Unsupported file format: {file_ext}")
-
-    return str(output_path)
-
-
-def process_pdf(pdf_path, output_pdf):
-    """Extracts images from a PDF, applies skew correction, and saves as a processed PDF."""
-    images = pdf2image.convert_from_path(pdf_path, dpi=300)
-
-    if not images:
-        raise ValueError(f"Failed to extract images from {pdf_path}")
-
-    processed_images = [process_image(img) for img in images]
     
-    save_as_pdf(processed_images, output_pdf)
-    print(f"Processed PDF saved at: {output_pdf}")
+    if output_dir is None:
+        output_dir = input_path.parent / f"{input_path.stem}_processed"
+    
+    os.makedirs(output_dir, exist_ok=True)
 
+    file_ext = input_path.suffix.lower()
+    
+    if file_ext in ['.png', '.tiff', '.tif']:
+        # Convert PNG to a standard format if needed
+        fixed_image_path = os.path.join(output_dir, f"{input_path.stem}_fixed.png")
+        convert_png(file_path, fixed_image_path)
 
-def process_image_file(image_path, output_image):
-    """Processes a single image file, applies skew correction, and saves it back in the same format."""
-    image = Image.open(image_path)
-    processed_image = process_image(image)
-    processed_image.save(output_image)
-    print(f"Processed Image saved at: {output_image}")
+        # Process single image
+        img = Image.open(fixed_image_path)
+        processed_img = process_image(img)
 
+        output_path = os.path.join(output_dir, f"{input_path.stem}_processed{file_ext}")
+        processed_img.save(output_path)
 
-def process_image(image):
-    """Processes an image in memory, applies skew correction using OCR, and returns the processed image."""
-    api = ocr.AsposeOcr()
-    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+    elif file_ext == '.pdf':
+        # Process multiple pages in a PDF
+        images = pdf2image.convert_from_path(file_path, dpi=300)
+        if not images:
+            raise ValueError("Failed to extract images from PDF")
 
-    # Convert image to bytes (in-memory)
-    image_bytes = BytesIO()
-    image.save(image_bytes, format="PNG")  # Keeping it in PNG format for OCR processing
-    image_data = image_bytes.getvalue()
+        processed_images = [process_image(img) for img in images]
 
-    # Perform OCR-based skew detection
-    ocr_input.add_binary(image_data, "image.png")  # Pass image data directly without saving a file
-    angles = api.calculate_skew(ocr_input)
-
-    # Convert PIL image to OpenCV format (NumPy array)
-    img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-
-    if angles:
-        skew_angle = angles[0].angle  # Get detected skew angle
-        print(f"Skew Angle Detected: {skew_angle:.2f}°")
-        img = correct_skew(img, skew_angle)  # Correct skew
-
-        # Convert back to PIL Image
-        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        output_path = os.path.join(output_dir, f"{input_path.stem}_processed.pdf")
+        save_as_pdf(processed_images, output_path)
+    
     else:
-        print("No skew detected.")
-        img = image
+        raise ValueError("Unsupported file format. Only PNG, TIFF, and PDF are allowed.")
 
-    return img
+    print(f"Processed file saved at: {output_path}")
+    return output_path
+
+
+def convert_png(input_path, output_path):
+    """Converts PNG to a standard format to avoid version issues."""
+    img = Image.open(input_path)
+    img = img.convert("RGB")  # Convert to a standard format
+    img.save(output_path, format="PNG")
+
+
+def save_as_pdf(images, output_path):
+    """Saves multiple processed images as a PDF."""
+    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
 
 
 def correct_skew(image, angle):
-    """Corrects skew in an image using OpenCV rotation."""
+    """Corrects skew in an image using the detected angle."""
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
 
@@ -102,13 +81,44 @@ def correct_skew(image, angle):
     return corrected
 
 
-def save_as_pdf(images, output_path):
-    """Saves a list of PIL images as a PDF."""
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
+def detect_skew_opencv(image):
+    """Uses OpenCV to detect and correct skew instead of AsposeOCR."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
+
+    if lines is not None:
+        angles = []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+            angles.append(angle)
+
+        skew_angle = np.median(angles)
+        return correct_skew(image, skew_angle)  # Correct skew
+    return image
 
 
-# Example Usage
+def process_image(image):
+    """Applies OpenCV-based skew detection and correction, then returns the processed image."""
+    image_path = "temp_image.png"
+    image.save(image_path)
+
+    img = cv2.imread(image_path)
+
+    if img is not None:
+        img = detect_skew_opencv(img)  # Use OpenCV instead of AsposeOCR
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
+
+    return img
+
+
+def main():
+    input_file = r"\\apachkwinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\skewedpdf\@@@@@@@2661910562039_FBM"
+    output_folder = r"C:\CitiDev\pdfmyocr\output"
+
+    process_document(input_file, output_folder)
+
+
 if __name__ == "__main__":
-    file_path = input("Enter the file path: ").strip()
-    output_file = process_file(file_path)
-    print(f"Processing completed. Output saved at: {output_file}")
+    main()
