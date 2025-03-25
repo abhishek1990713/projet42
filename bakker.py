@@ -5,65 +5,75 @@ import pdf2image
 import cv2
 from pathlib import Path
 import aspose.ocr as ocr
+from io import BytesIO
 
 
 def process_file(file_path):
     """
     Processes a single PDF or image file.
     - PDFs → Outputs a processed PDF
-    - Images (JPG, PNG, TIF, etc.) → Outputs a processed TIFF file
+    - Images (JPG, PNG, TIF, etc.) → Outputs a processed image in the same format
     """
     input_path = Path(file_path)
     file_ext = input_path.suffix.lower()
-    output_path = input_path.with_stem(input_path.stem + "_processed")
+
+    output_path = input_path.parent / f"{input_path.stem}_processed{file_ext}"
 
     if file_ext == ".pdf":
-        process_pdf(file_path, output_path.with_suffix(".pdf"))
+        process_pdf(file_path, output_path)
     elif file_ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff"]:
-        process_image_file(file_path, output_path.with_suffix(".tiff"))
+        process_image_file(file_path, output_path)
     else:
-        print(f"Unsupported file format: {file_ext}")
+        raise ValueError(f"Unsupported file format: {file_ext}")
+
+    return str(output_path)
 
 
 def process_pdf(pdf_path, output_pdf):
     """Extracts images from a PDF, applies skew correction, and saves as a processed PDF."""
     images = pdf2image.convert_from_path(pdf_path, dpi=300)
-    
+
     if not images:
         raise ValueError(f"Failed to extract images from {pdf_path}")
 
     processed_images = [process_image(img) for img in images]
     
     save_as_pdf(processed_images, output_pdf)
-    print(f"Processed PDF: {pdf_path} -> {output_pdf}")
+    print(f"Processed PDF saved at: {output_pdf}")
 
 
-def process_image_file(image_path, output_tiff):
-    """Processes a single image file, applies skew correction, and saves as TIFF."""
+def process_image_file(image_path, output_image):
+    """Processes a single image file, applies skew correction, and saves it back in the same format."""
     image = Image.open(image_path)
     processed_image = process_image(image)
-    processed_image.save(output_tiff, format="TIFF")
-    print(f"Processed Image: {image_path} -> {output_tiff}")
+    processed_image.save(output_image)
+    print(f"Processed Image saved at: {output_image}")
 
 
 def process_image(image):
-    """Applies OCR-based skew correction to an image."""
+    """Processes an image in memory, applies skew correction using OCR, and returns the processed image."""
     api = ocr.AsposeOcr()
     ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
 
-    temp_image_path = "temp_image.png"
-    image.save(temp_image_path)
+    # Convert image to bytes (in-memory)
+    image_bytes = BytesIO()
+    image.save(image_bytes, format="PNG")  # Keeping it in PNG format for OCR processing
+    image_data = image_bytes.getvalue()
 
-    ocr_input.add(temp_image_path)
+    # Perform OCR-based skew detection
+    ocr_input.add_binary(image_data, "image.png")  # Pass image data directly without saving a file
     angles = api.calculate_skew(ocr_input)
 
-    img = cv2.imread(temp_image_path)
+    # Convert PIL image to OpenCV format (NumPy array)
+    img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-    if angles and img is not None:
+    if angles:
         skew_angle = angles[0].angle  # Get detected skew angle
         print(f"Skew Angle Detected: {skew_angle:.2f}°")
-        img = correct_skew(img, skew_angle)
-        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
+        img = correct_skew(img, skew_angle)  # Correct skew
+
+        # Convert back to PIL Image
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     else:
         print("No skew detected.")
         img = image
@@ -95,16 +105,8 @@ def save_as_pdf(images, output_path):
     images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
 
 
-def main():
-    file_path = input("Enter the full path of the PDF or image: ").strip()
-
-    if not os.path.exists(file_path):
-        print("Error: File does not exist!")
-        return
-
-    process_file(file_path)
-
-
+# Example Usage
 if __name__ == "__main__":
-    main()
-
+    file_path = input("Enter the file path: ").strip()
+    output_file = process_file(file_path)
+    print(f"Processing completed. Output saved at: {output_file}")
