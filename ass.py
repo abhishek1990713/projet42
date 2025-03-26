@@ -4,27 +4,36 @@ import fitz  # PyMuPDF
 import os
 import cv2
 import numpy as np
-from PIL import Image, TiffImagePlugin
+from PIL import Image
 
 
 def correct_skew(file_path, angles, output_path):
-    """Correct skew for PDFs (rotates pages permanently), TIFFs, and images."""
+    """Correct skew for PDFs (converts to images, rotates precisely), TIFFs, and images."""
     print(f"\n🔄 Correcting skew for: {file_path}")
 
-    # Handle PDFs (Rotate pages permanently)
+    # Handle PDFs (Convert each page to an image, rotate, save back)
     if file_path.lower().endswith(".pdf"):
         doc = fitz.open(file_path)
+        corrected_images = []
 
-        for page_no in range(len(doc)):
-            page = doc[page_no]
-            angle = angles.get(page_no + 1, 0.0)  # PyMuPDF pages are 0-indexed
-            print(f"  🔹 Rotating PDF page {page_no + 1} | Angle: {angle:.2f}°")
+        for i, page in enumerate(doc):
+            page_no = i + 1
+            angle = angles.get(page_no, 0.0)  # Get detected angle
 
-            if angle != 0:
-                rotate_pdf_page(doc, page_no, angle)
+            print(f"  🔹 Processing PDF Page {page_no} | Angle: {angle:.2f}°")
 
-        doc.save(output_path)
-        doc.close()
+            # Convert PDF page to an image
+            pix = page.get_pixmap(dpi=300)  # Render at 300 DPI
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            # Convert to OpenCV format, rotate, and convert back
+            img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            corrected_img_cv = rotate_image(img_cv, angle)
+            corrected_img = Image.fromarray(cv2.cvtColor(corrected_img_cv, cv2.COLOR_BGR2RGB))
+            corrected_images.append(corrected_img)
+
+        # Save rotated images back to a new PDF
+        save_as_pdf(corrected_images, output_path)
         print(f"✅ Corrected PDF saved: {output_path}")
 
     # Handle Multi-page TIFFs
@@ -35,6 +44,7 @@ def correct_skew(file_path, angles, output_path):
                 img.seek(i)  # Select TIFF page
                 page_no = i + 1
                 angle = angles.get(page_no, 0.0)
+
                 print(f"  🔹 Processing TIFF page {page_no} | Angle: {angle:.2f}°")
 
                 img_cv = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
@@ -60,21 +70,6 @@ def correct_skew(file_path, angles, output_path):
         return
 
 
-def rotate_pdf_page(doc, page_no, angle):
-    """Physically rotate a PDF page and redraw content."""
-    page = doc[page_no]
-    
-    # Convert small angles to 90-degree steps for PyMuPDF
-    fixed_angle = round(angle / 90) * 90  # Must be 0, 90, 180, or 270
-    if fixed_angle not in [0, 90, 180, 270]:
-        print(f"⚠️ Skipping small angle {angle:.2f}° for page {page_no + 1}")
-        return
-    
-    # Rotate and re-draw the page
-    page.set_rotation(fixed_angle)
-    print(f"  ✅ Rotated Page {page_no + 1} by {fixed_angle}°")
-
-
 def rotate_image(image, angle):
     """Rotate image based on detected angle."""
     print(f"  ↪ Rotating image by {angle:.2f}°")
@@ -96,6 +91,11 @@ def rotate_image(image, angle):
     return rotated
 
 
+def save_as_pdf(images, output_path):
+    """Save rotated images as a PDF."""
+    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
+
+
 def save_as_tiff(images, output_path):
     """Save multi-page TIFF images."""
     images[0].save(output_path, save_all=True, append_images=images[1:], compression="tiff_deflate")
@@ -103,15 +103,15 @@ def save_as_tiff(images, output_path):
 
 # Example usage:
 if __name__ == "__main__":
-    # Example detected skew angles in dictionary format
+    # Example detected skew angles
     detected_angle = [
-        {'page_no': 1, 'skewed_angle': 90},  # Must be 90, 180, or 270
-        {'page_no': 2, 'skewed_angle': 0},
-        {'page_no': 3, 'skewed_angle': 180},
-        {'page_no': 4, 'skewed_angle': 0}
+        {'page_no': 1, 'skewed_angle': 2.45},
+        {'page_no': 2, 'skewed_angle': 0.0},
+        {'page_no': 3, 'skewed_angle': -1.96},
+        {'page_no': 4, 'skewed_angle': 0.0}
     ]
 
-    # Convert list of dictionaries into a dictionary
+    # Convert list to dictionary
     angles_dict = {entry['page_no']: entry['skewed_angle'] for entry in detected_angle}
 
     # Input and output file paths
