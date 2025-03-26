@@ -1,5 +1,4 @@
 
-
 import os
 import cv2
 import numpy as np
@@ -7,34 +6,39 @@ import pdf2image
 from PIL import Image
 
 
-def correct_skew(pdf_path, angle, output_path):
-    """Correct the skew of a PDF using the given angle and save the corrected PDF."""
-    print(f"\n🔄 Correcting skew for: {pdf_path} (Angle: {angle:.2f}°)")
-
-    images = pdf2image.convert_from_path(pdf_path, dpi=300)
-
-    if not images:
-        print("❌ Failed to extract images from PDF.")
-        raise ValueError(f"Failed to extract images from PDF: {pdf_path}")
+def correct_skew(file_path, angle, output_path):
+    """Correct the skew of a file (PDF, image, TIFF) and save the output."""
+    print(f"\n🔄 Correcting skew for: {file_path} (Angle: {angle:.2f}°)")
 
     corrected_images = []
 
-    for idx, img in enumerate(images):
-        print(f"🔹 Processing page {idx + 1}/{len(images)}...")
+    # Handle PDFs
+    if file_path.lower().endswith(".pdf"):
+        images = pdf2image.convert_from_path(file_path, dpi=300)
+        if not images:
+            print("❌ Failed to extract images from PDF.")
+            raise ValueError(f"Failed to extract images from PDF: {file_path}")
 
-        # Convert PIL Image to OpenCV format
-        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        for idx, img in enumerate(images):
+            print(f"🔹 Processing page {idx + 1}/{len(images)}...")
+            img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            corrected_img_cv = rotate_image(img_cv, angle)
+            corrected_img = Image.fromarray(cv2.cvtColor(corrected_img_cv, cv2.COLOR_BGR2RGB))
+            corrected_images.append(corrected_img)
 
-        # Correct the skew
-        corrected_img_cv = rotate_image(img_cv, angle)
+        save_as_pdf(corrected_images, output_path)
+        print(f"✅ Corrected PDF saved: {output_path}")
 
-        # Convert back to PIL Image
-        corrected_img = Image.fromarray(cv2.cvtColor(corrected_img_cv, cv2.COLOR_BGR2RGB))
-        corrected_images.append(corrected_img)
+    # Handle images (JPG, PNG, TIFF)
+    elif file_path.lower().endswith((".jpg", ".jpeg", ".png", ".tiff")):
+        img = cv2.imread(file_path)
+        corrected_img = rotate_image(img, angle)
+        cv2.imwrite(output_path, corrected_img)
+        print(f"✅ Corrected image saved: {output_path}")
 
-    # Save as a new PDF
-    save_as_pdf(corrected_images, output_path)
-    print(f"✅ Corrected PDF saved: {output_path}")
+    else:
+        print("❌ Unsupported file format.")
+        return
 
 
 def rotate_image(image, angle):
