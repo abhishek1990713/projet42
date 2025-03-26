@@ -1,103 +1,111 @@
 
 
-import os
-import numpy as np
-from PIL import Image
-import pdf2image
+import fitz  # PyMuPDF
 import cv2
-from pathlib import Path
+import numpy as np
+import os
+from scipy.ndimage import interpolation as inter
 import aspose.ocr as ocr
+from PIL import Image
 
+# Instantiate Aspose.OCR API
+api = ocr.RecognitionEngine()
 
-def process_document(file_path, output_dir):
-    """Process a single PDF document, extract images, correct skew, and save as new PDF."""
-    file_name = Path(file_path).stem  # Get PDF name without extension
-    output_pdf_path = os.path.join(output_dir, f"{file_name}_processed.pdf")
-
-    images = pdf2image.convert_from_path(file_path, dpi=300)
-    if not images:
-        raise ValueError(f"Failed to extract images from PDF: {file_path}")
-
-    processed_images = [process_image(img) for img in images]
-
-    # Save processed images as a new PDF
-    save_as_pdf(processed_images, output_pdf_path)
-
-    print(f"Processed and saved: {output_pdf_path}")
-    return output_pdf_path
-
-
-def save_as_pdf(images, output_path):
-    """Save a list of images as a PDF."""
-    images[0].save(output_path, save_all=True, append_images=images[1:], resolution=300)
+# Change temp path to a writable directory
+TEMP_DIR = os.path.join(os.environ.get('TEMP', '.'), "skew_correction")
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 
 def correct_skew(image, angle):
-    """Correct the skew in an image using the detected angle."""
+    """Rotates the image to correct skew"""
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
-
-    abs_cos = abs(np.cos(np.radians(angle)))
-    abs_sin = abs(np.sin(np.radians(angle)))
-
-    bound_w = int(h * abs_sin + w * abs_cos)
-    bound_h = int(h * abs_cos + w * abs_sin)
-
     M = cv2.getRotationMatrix2D(center, angle, 1)
-    M[0, 2] += (bound_w / 2) - center[0]
-    M[1, 2] += (bound_h / 2) - center[1]
-
-    corrected = cv2.warpAffine(image, M, (bound_w, bound_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    corrected = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
     return corrected
 
 
-def process_image(image):
-    """Perform OCR-based skew correction on an image."""
-    api = ocr.AsposeOcr()
-    ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+def process_pdf(file_path, output_pdf_path):
+    """Processes a multi-page PDF for skew detection and correction"""
+    if not os.path.exists(file_path):
+        print(f"❌ Error: File '{file_path}' not found.")
+        return
 
-    image_path = "temp_image.png"
-    image.save(image_path)
+    try:
+        pdf_document = fitz.open(file_path)
+    except Exception as e:
+        print(f"❌ Error: Cannot open PDF '{file_path}' - {e}")
+        return
 
-    ocr_input.add(image_path)
-    angles = api.calculate_skew(ocr_input)
+    output_images = []
 
-    img = cv2.imread(image_path)
+    for page_num in range(len(pdf_document)):
+        print(f"Processing page {page_num + 1} of {os.path.basename(file_path)}...")
 
-    if angles and img is not None:
-        skew_angle = angles[0].angle  # Get skew angle
-        print(f"{image_path}: Skew Angle Detected = {skew_angle:.2f}")
-        img = correct_skew(img, skew_angle)  # Correct skew
-        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  # Convert back to PIL Image
-    else:
-        print(f"{image_path}: No skew detected")
-        img = image
+        # Convert PDF page to image
+        pix = pdf_document[page_num].get_pixmap()
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
 
-    return img
+        if pix.n == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        elif pix.n == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+
+        # Save temporary image
+        temp_image_path = os.path.join(TEMP_DIR, f"page_{page_num + 1}.jpg")
+        cv2.imwrite(temp_image_path, img)
+
+        # Perform skew detection using AsposeOCR
+        try:
+            ocr_input = ocr.OcrInput(ocr.InputType.SINGLE_IMAGE)
+            ocr_input.add(temp_image_path)
+            angles = api.calculate_skew(ocr_input)
+        except RuntimeError as e:
+            print(f"⚠️ Warning: Skew detection failed on page {page_num + 1} - {e}")
+            continue
+
+        if angles:
+            skew_angle = angles[0].angle  # Get skew angle for this page
+            print(f"Page {page_num + 1}: Skew Angle Detected = {skew_angle:.2f}")
+            img = correct_skew(img, skew_angle)  # Correct skew
+        else:
+            print(f"Page {page_num + 1}: No skew detected")
+
+        img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        output_images.append(img_pil)
+
+    if output_images:
+        # Save all corrected pages as a new PDF
+        output_images[0].save(output_pdf_path, save_all=True, append_images=output_images[1:])
+        print(f"✅ Skew-corrected PDF saved at: {output_pdf_path}")
 
 
-def main():
-    """Process all PDF files in the input folder and save outputs in the output folder."""
-    input_folder = r"\\apachkwinrv7933\odp\Senduran\New folder\Process\Testing\Input\skewed\skewedpdf"
-    output_folder = r"C:\CitiDev\pdfmyocr\output"
+def process_all_pdfs(input_folder, output_folder):
+    """Processes all PDFs in the input folder and saves output in the output folder"""
+    if not os.path.exists(input_folder):
+        print(f"❌ Error: Input folder '{input_folder}' not found.")
+        return
 
-    # Ensure output directory exists
-    os.makedirs(output_folder, exist_ok=True)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    # Get all PDF files in the input folder
-    pdf_files = [f for f in os.listdir(input_folder) if f.lower().endswith(".pdf")]
-
+    pdf_files = [f for f in os.listdir(input_folder) if f.lower().endswith('.pdf')]
+    
     if not pdf_files:
-        print("No PDF files found in the input folder.")
+        print(f"⚠️ No PDF files found in '{input_folder}'.")
         return
 
     for pdf_file in pdf_files:
         input_pdf_path = os.path.join(input_folder, pdf_file)
-        try:
-            process_document(input_pdf_path, output_folder)
-        except Exception as e:
-            print(f"Error processing {pdf_file}: {e}")
+        output_pdf_path = os.path.join(output_folder, pdf_file)
+
+        print(f"\n📄 Processing '{pdf_file}'...")
+        process_pdf(input_pdf_path, output_pdf_path)
 
 
 if __name__ == "__main__":
-    main()
+    # Folder paths
+    input_folder = r"C:\CitiDev\pdfmyocr\input"
+    output_folder = r"C:\CitiDev\pdfmyocr\output"
+
+    process_all_pdfs(input_folder, output_folder)
