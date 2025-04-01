@@ -1,5 +1,7 @@
+
 import cv2
 import os
+import numpy as np
 import aspose.ocr as ocr
 
 # Instantiate Aspose.OCR API
@@ -36,13 +38,38 @@ def detect_skew_angle(image_path):
         print("No skew detected")
         return None
 
+def remove_background(image):
+    """Removes the background using thresholding and contour detection."""
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Apply binary thresholding to create a binary image (foreground vs background)
+    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    # Find contours in the thresholded image
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Create an empty mask to fill with the contours
+    mask = np.zeros_like(image)
+
+    # Draw all contours on the mask (foreground)
+    cv2.drawContours(mask, contours, -1, (255, 255, 255), thickness=cv2.FILLED)
+
+    # Bitwise AND the image with the mask to isolate the foreground
+    result = cv2.bitwise_and(image, mask)
+    
+    return result
+
 def crop_and_save_image(input_image_path, output_folder):
-    """Crops an image into five vertical sections and saves them."""
+    """Crops an image into five vertical sections after removing the background and saves them."""
     # Read the input image
     image = cv2.imread(input_image_path)
 
     if image is None:
         raise ValueError("Image not found or unable to read the file.")
+
+    # Remove the background
+    image = remove_background(image)
 
     # Get image dimensions
     height, width, _ = image.shape
