@@ -3,6 +3,8 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
+from tensorflow.keras.applications import InceptionV3
+from tensorflow.keras.preprocessing.image import img_to_array
 
 # Function to rotate images and save them
 def rotate_image(image_path, output_folder):
@@ -24,7 +26,7 @@ def rotate_image(image_path, output_folder):
         rotated_image = cv2.warpAffine(image, rotation_matrix, (width, height))
         
         # Resize to fixed size (128x128) before appending
-        resized_image = cv2.resize(rotated_image, (128, 128))
+        resized_image = cv2.resize(rotated_image, (299, 299))  # InceptionV3 expects 299x299 images
         output_path = os.path.join(output_folder, f"{filename}_rotated_{angle}.jpg")
         cv2.imwrite(output_path, rotated_image)
         
@@ -34,19 +36,20 @@ def rotate_image(image_path, output_folder):
     
     return np.array(dataset), np.array(labels)
 
-# Function to build the model
+# Function to build the model using InceptionV3
 def build_model():
+    base_model = InceptionV3(weights='imagenet', include_top=False, input_shape=(299, 299, 3))
+    
+    # Freeze the base model to use its learned features without retraining
+    base_model.trainable = False
+    
     model = models.Sequential([
-        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(128, 128, 3)),
-        layers.MaxPooling2D((2, 2)),
-        layers.Conv2D(64, (3, 3), activation='relu'),
-        layers.MaxPooling2D((2, 2)),
-        layers.Conv2D(128, (3, 3), activation='relu'),
-        layers.MaxPooling2D((2, 2)),
-        layers.Flatten(),
+        base_model,
+        layers.GlobalAveragePooling2D(),
         layers.Dense(128, activation='relu'),
         layers.Dense(1)  # Regression output for angle
     ])
+    
     model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
     return model
 
@@ -65,15 +68,14 @@ if __name__ == "__main__":
             y.extend(labels)
     
     # Convert to numpy arrays and normalize
-    X = np.array([cv2.resize(img, (128, 128)) for img in X], dtype=np.float32) / 255.0
+    X = np.array(X, dtype=np.float32) / 255.0
     y = np.array(y, dtype=np.float32)
 
-    # Build the model
+    # Build the model using InceptionV3
     model = build_model()
     
     # Train the model
     model.fit(X, y, epochs=10, batch_size=32, validation_split=0.2)
 
     # Save the trained model
-    model.save("rotation_angle_model.h5")
-
+    model.save("rotation_angle_model_inceptionv3.h5")
