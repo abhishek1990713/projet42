@@ -44,67 +44,27 @@ def remove_background(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Apply binary thresholding to create a binary image (foreground vs background)
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+    _, thresh = cv2.threshold(gray, 200, 255, 
 
-    # Find contours in the thresholded image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Create an empty mask to fill with the contours
-    mask = np.zeros_like(image)
 
-    # Draw all contours on the mask (foreground)
-    cv2.drawContours(mask, contours, -1, (255, 255, 255), thickness=cv2.FILLED)
+    import os
 
-    # Bitwise AND the image with the mask to isolate the foreground
-    result = cv2.bitwise_and(image, mask)
-    
-    return result
+# Assuming detect_skew_angle is defined elsewhere in your code
 
-def crop_and_save_image(input_image_path, output_folder):
-    """Crops an image into five vertical sections after removing the background and saves them."""
-    # Read the input image
-    image = cv2.imread(input_image_path)
+# Define the folder path containing the images
+folder_path = 'path_to_your_folder'
 
-    if image is None:
-        raise ValueError("Image not found or unable to read the file.")
-
-    # Remove the background
-    image = remove_background(image)
-
-    # Get image dimensions
-    height, width, _ = image.shape
-
-    # Calculate the width of each vertical crop
-    crop_width = width // 5
-
-    # Ensure the output folder exists
-    os.makedirs(output_folder, exist_ok=True)
-
-    # Crop and save each vertical section
-    for i in range(5):
-        # Define the cropping region
-        x_start = i * crop_width
-        x_end = (i + 1) * crop_width if i < 4 else width  # Ensure the last crop includes the remaining pixels
-
-        cropped_image = image[:, x_start:x_end]
-
-        # Save the cropped image
-        output_path = os.path.join(output_folder, f"cropped_section_{i + 1}.jpg")
-        cv2.imwrite(output_path, cropped_image)
-
-        print(f"Saved: {output_path}")
-
-        # Detect skew angle for the cropped image
-        skew_angle = detect_skew_angle(output_path)
-
-        if skew_angle is not None:
-            print(f"Skew angle for section {i + 1}: {skew_angle:.2f}°")
+# Loop through all the images in the folder
+for filename in os.listdir(folder_path):
+    # Check if the file is an image (you can modify this to include the extensions you need)
+    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        image_path = os.path.join(folder_path, filename)
+        
+        # Detect the skew angle
+        detected_angle = detect_skew_angle(image_path)
+        
+        if detected_angle is not None:
+            print(f"Image: {filename} - Detected skew angle: {detected_angle:.2f}°")
         else:
-            print(f"No skew detected for section {i + 1}.")
-
-if __name__ == "__main__":
-    # Example: Replace with your actual image path
-    image_path = r"your_image_path_here.jpg"  # Provide the path to your image
-    output_folder = r"your_output_folder_here"  # Provide the folder where cropped images will be saved
-
-    crop_and_save_image(image_path, output_folder)
+            print(f"Image: {filename} - No skew angle detected.")
