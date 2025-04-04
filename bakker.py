@@ -1,21 +1,42 @@
+import logging
 
+# Logging Configuration
+LOG_PPOCR_LEVEL = 'ppocr'
+LOGGING_LEVEL = logging.WARNING
+LOGGER_NAME = 'passport_logger'
+LOG_FILE_NAME = 'passport_app.log'
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-import numpy as np
-import cv2
-import pandas as pd
-from mrl_passport import process_passport_information
-from constant import *
-from logger_config import logger
-import uvicorn
-from io import BytesIO
-import Sure! Here's a comparative table listing **4 pros and cons** each for **PaddleOCR**, **DocTR**, and **Tesseract OCR**:
+# Log Messages
+LOG_START_PROCESSING = "Starting passport processing."
+LOG_PROCESSING_COMPLETE = "Passport processing completed."
+LOG_MRL_LABEL_FOUND = "MRZ Label '{}' found."
+LOG_LABEL_FOUND = "Label '{}' found."
+LOG_TEXT_EXTRACTED = "Text extracted for label '{}': {}"
 
-| OCR Engine     | Pros                                                                 | Cons                                                                 |
-|----------------|----------------------------------------------------------------------|----------------------------------------------------------------------|
-| **PaddleOCR**  | 1. High accuracy for multiple languages (including Japanese & Chinese).<br>2. Supports detection + recognition + layout.<br>3. Modular and customizable.<br>4. Active community and regular updates. | 1. Heavier models may require GPU for fast processing.<br>2. Slightly complex setup for beginners.<br>3. Less effective on low-resolution images.<br>4. Larger model size increases storage need. |
-| **DocTR**      | 1. Built on PyTorch, easy to integrate with DL pipelines.<br>2. End-to-end OCR with detection + recognition.<br>3. Good performance on printed text.<br>4. Clean, modern API and documentation. | 1. Limited language support compared to PaddleOCR.<br>2. Struggles with handwriting.<br>3. Slower than PaddleOCR on large datasets.<br>4. Detection not as robust on distorted documents. |
-| **Tesseract**  | 1. Lightweight and easy to set up.<br>2. No GPU required.<br>3. Good for printed English text.<br>4. Extensively documented, open-source. | 1. Poor accuracy on complex layouts and noisy backgrounds.<br>2. Weak support for non-Latin scripts.<br>3. No built-in detection (needs external box detection).<br>4. Slow on large files. |
+# Error Messages
+ERROR_UNSUPPORTED_FORMAT = "Unsupported file format"
+ERROR_IMAGE_PROCESSING = "Image processing error: {}"
+ERROR_PDF_PROCESSING = "PDF processing error: {}"
+ERROR_TIFF_PROCESSING = "TIFF processing error: {}"
+ERROR_PROCESSING = "Processing error: {}"
+ERROR_DECODE_IMAGE = "Unable to decode image"
+ERROR_GENERAL = "An unexpected error occurred: {}"
 
-Let me know if you want a PDF or Markdown export of this table, or a graphical chart version.
+# API Response Keys
+SUCCESS_RESPONSE = "success"
+ERROR_RESPONSE = "error"
+
+# MRZ Constants
+DEFAULT_MRZ_LENGTH = 44
+UNKNOWN_VALUE = "Unknown"
+INVALID_DATE = "Invalid Date"
+N_A_VALUE = "N/A"
+
+# PaddleOCR Configuration
+USE_GPU = False
+USE_ANGLE_CLS = False
+USE_CLS = False
+USE_DET = True
+USE_REC = True
+OCR_LANG = 'en'
