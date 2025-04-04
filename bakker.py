@@ -10,79 +10,12 @@ from constant import *
 from logger_config import logger
 import uvicorn
 from io import BytesIO
-import tempfile
-import fitz
-from PIL import Image
-import traceback
+import Sure! Here's a comparative table listing **4 pros and cons** each for **PaddleOCR**, **DocTR**, and **Tesseract OCR**:
 
-app = FastAPI()
+| OCR Engine     | Pros                                                                 | Cons                                                                 |
+|----------------|----------------------------------------------------------------------|----------------------------------------------------------------------|
+| **PaddleOCR**  | 1. High accuracy for multiple languages (including Japanese & Chinese).<br>2. Supports detection + recognition + layout.<br>3. Modular and customizable.<br>4. Active community and regular updates. | 1. Heavier models may require GPU for fast processing.<br>2. Slightly complex setup for beginners.<br>3. Less effective on low-resolution images.<br>4. Larger model size increases storage need. |
+| **DocTR**      | 1. Built on PyTorch, easy to integrate with DL pipelines.<br>2. End-to-end OCR with detection + recognition.<br>3. Good performance on printed text.<br>4. Clean, modern API and documentation. | 1. Limited language support compared to PaddleOCR.<br>2. Struggles with handwriting.<br>3. Slower than PaddleOCR on large datasets.<br>4. Detection not as robust on distorted documents. |
+| **Tesseract**  | 1. Lightweight and easy to set up.<br>2. No GPU required.<br>3. Good for printed English text.<br>4. Extensively documented, open-source. | 1. Poor accuracy on complex layouts and noisy backgrounds.<br>2. Weak support for non-Latin scripts.<br>3. No built-in detection (needs external box detection).<br>4. Slow on large files. |
 
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...)):
-    try:
-        contents = await file.read()
-        file_ext = file.filename.split(".")[-1].lower()
-        images = []
-
-        if file_ext in ["jpg", "jpeg", "png"]:
-            try:
-                image_np = np.frombuffer(contents, np.uint8)
-                image_cv2 = cv2.imdecode(image_np, cv2.IMREAD_COLOR)
-                if image_cv2 is None:
-                    raise ValueError(ERR_IMAGE_DECODE)
-                images.append(image_cv2)
-            except Exception as e:
-                logger.error(f"{ERR_IMAGE_PROCESS}{e}")
-                raise HTTPException(status_code=400, detail=f"{ERR_IMAGE_PROCESS}{str(e)}")
-
-        elif file_ext == "pdf":
-            try:
-                pdf_doc = fitz.open(stream=contents, filetype="pdf")
-                for page in pdf_doc:
-                    pix = page.get_pixmap()
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    image_cv2 = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                    images.append(image_cv2)
-            except Exception as e:
-                logger.error(f"{ERR_PDF_PROCESS}{e}")
-                raise HTTPException(status_code=400, detail=f"{ERR_PDF_PROCESS}{str(e)}")
-
-        elif file_ext in ["tiff", "tif"]:
-            try:
-                with BytesIO(contents) as tiff_io:
-                    with Image.open(tiff_io) as img:
-                        for frame in range(img.n_frames):
-                            img.seek(frame)
-                            image_cv2 = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-                            images.append(image_cv2)
-            except Exception as e:
-                logger.error(f"{ERR_TIFF_PROCESS}{e}")
-                raise HTTPException(status_code=400, detail=f"{ERR_TIFF_PROCESS}{str(e)}")
-
-        else:
-            logger.error(ERR_UNSUPPORTED_FORMAT)
-            raise HTTPException(status_code=400, detail=ERR_UNSUPPORTED_FORMAT)
-
-        results = []
-        for image in images:
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp_file:
-                    _, encoded_img = cv2.imencode(".jpg", image)
-                    temp_file.write(encoded_img.tobytes())
-                    temp_file_path = temp_file.name
-
-                result_df = process_passport_information(temp_file_path)
-                results.extend(result_df.to_dict(orient="records"))
-            except Exception as e:
-                logger.error(f"{ERR_PROCESSING}{e}")
-                raise HTTPException(status_code=500, detail=f"{ERR_PROCESSING}{str(e)}")
-
-        return JSONResponse(content={"status": STATUS_SUCCESS, "data": results})
-
-    except Exception as e:
-        error_message = traceback.format_exc()
-        logger.error(f"{STATUS_ERROR}: {str(e)}\n{error_message}")
-        return JSONResponse(status_code=500, content={"status": STATUS_ERROR, "message": str(e), "trace": error_message})
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8888)
+Let me know if you want a PDF or Markdown export of this table, or a graphical chart version.
