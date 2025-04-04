@@ -1,42 +1,38 @@
-import logging
+# constant.py
 
-# Logging Configuration
+# Logging Messages
 LOG_PPOCR_LEVEL = 'ppocr'
-LOGGING_LEVEL = logging.WARNING
+LOGGING_LEVEL = 'WARNING'
 LOGGER_NAME = 'passport_logger'
 LOG_FILE_NAME = 'passport_app.log'
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-# Log Messages
-LOG_START_PROCESSING = "Starting passport processing."
-LOG_PROCESSING_COMPLETE = "Passport processing completed."
-LOG_MRL_LABEL_FOUND = "MRZ Label '{}' found."
-LOG_LABEL_FOUND = "Label '{}' found."
-LOG_TEXT_EXTRACTED = "Text extracted for label '{}': {}"
+# Paths
+DOCTR_CACHE_DIR = '/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models/models/models'
+PASSPORT_MODEL_PATH = '/home/ko19678/japan_pipeline/ALL_Passport/best.pt'
+DET_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer'
+REC_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer'
+CLS_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer'
+
+# Labels
+MRL_ONE = 'MRL_One'
+MRL_SECOND = 'MRL_Second'
 
 # Error Messages
-ERROR_UNSUPPORTED_FORMAT = "Unsupported file format"
-ERROR_IMAGE_PROCESSING = "Image processing error: {}"
-ERROR_PDF_PROCESSING = "PDF processing error: {}"
-ERROR_TIFF_PROCESSING = "TIFF processing error: {}"
-ERROR_PROCESSING = "Processing error: {}"
-ERROR_DECODE_IMAGE = "Unable to decode image"
-ERROR_GENERAL = "An unexpected error occurred: {}"
+ERR_IMAGE_DECODE = 'Unable to decode image'
+ERR_IMAGE_PROCESS = 'Image processing error: '
+ERR_PDF_PROCESS = 'PDF processing error: '
+ERR_TIFF_PROCESS = 'TIFF processing error: '
+ERR_UNSUPPORTED_FORMAT = 'Unsupported file format'
+ERR_PROCESSING = 'Processing error: '
 
-# API Response Keys
-SUCCESS_RESPONSE = "success"
-ERROR_RESPONSE = "error"
+# Response
+STATUS_SUCCESS = 'success'
+STATUS_ERROR = 'error'
 
-# MRZ Constants
-DEFAULT_MRZ_LENGTH = 44
-UNKNOWN_VALUE = "Unknown"
-INVALID_DATE = "Invalid Date"
-N_A_VALUE = "N/A"
+# Gender Mapping
+GENDER_MAPPING = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
 
-# PaddleOCR Configuration
-USE_GPU = False
-USE_ANGLE_CLS = False
-USE_CLS = False
-USE_DET = True
-USE_REC = True
-OCR_LANG = 'en'
+# Date Validation
+VALID_ISSUE_DATE = '22 AUG 2010'
+VALID_EXPIRY_DATE = '22 AUG 2029'
