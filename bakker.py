@@ -1,4 +1,4 @@
-# mrl_passport.py
+9# mrl_passport.py
 from PIL import Image
 import os
 import numpy as np
@@ -263,3 +263,28 @@ async def upload_file(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8088)
+
+
+# logger_config.py
+
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+
+def setup_logger(name: str, log_file: str, level=logging.INFO):
+    # Ensure log directory exists
+    log_dir = os.path.dirname(log_file)
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=2)
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    if not logger.hasHandlers():
+        logger.addHandler(handler)
+
+    return logger
