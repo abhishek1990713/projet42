@@ -1,38 +1,30 @@
-# constant.py
 
-# Logging Messages
-LOG_PPOCR_LEVEL = 'ppocr'
-LOGGING_LEVEL = 'WARNING'
-LOGGER_NAME = 'passport_logger'
-LOG_FILE_NAME = 'passport_app.log'
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-# Paths
-DOCTR_CACHE_DIR = '/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models/models/models'
-PASSPORT_MODEL_PATH = '/home/ko19678/japan_pipeline/ALL_Passport/best.pt'
-DET_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer'
-REC_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer'
-CLS_MODEL_DIR = '/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer'
+# === Logger ===
+LOG_FILE_NAME = "app.log"
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOGGER_NAME = "passport_logger"
 
-# Labels
-MRL_ONE = 'MRL_One'
-MRL_SECOND = 'MRL_Second'
+# === Log Messages ===
+LOG_START_PROCESSING = "Started processing the passport image."
+LOG_PROCESSING_COMPLETE = "Completed processing the passport image."
+LOG_MRL_LABEL_FOUND = "MRZ Line Detected: {}"
+LOG_LABEL_FOUND = "Non-MRZ Text Detected: {}"
+LOG_TEXT_EXTRACTED = "Text extracted from {}: {}"
 
-# Error Messages
-ERR_IMAGE_DECODE = 'Unable to decode image'
-ERR_IMAGE_PROCESS = 'Image processing error: '
-ERR_PDF_PROCESS = 'PDF processing error: '
-ERR_TIFF_PROCESS = 'TIFF processing error: '
-ERR_UNSUPPORTED_FORMAT = 'Unsupported file format'
-ERR_PROCESSING = 'Processing error: '
+# === Error Messages ===
+ERROR_UNSUPPORTED_FORMAT = "Unsupported file format"
+ERROR_IMAGE_PROCESSING = "Image processing error: {}"
+ERROR_PDF_PROCESSING = "PDF processing error: {}"
+ERROR_TIFF_PROCESSING = "TIFF processing error: {}"
+ERROR_PROCESSING = "Passport processing error: {}"
+ERROR_DECODE_IMAGE = "Unable to decode image"
 
-# Response
-STATUS_SUCCESS = 'success'
-STATUS_ERROR = 'error'
+# === API Response Status ===
+SUCCESS_RESPONSE = "success"
+ERROR_RESPONSE = "error"
 
-# Gender Mapping
-GENDER_MAPPING = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-
-# Date Validation
-VALID_ISSUE_DATE = '22 AUG 2010'
-VALID_EXPIRY_DATE = '22 AUG 2029'
+# === Placeholder Values ===
+UNKNOWN_VALUE = "UNKNOWN"
+N_A_VALUE = "N/A"
+DEFAULT_MRZ_LENGTH = 44
