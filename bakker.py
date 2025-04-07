@@ -177,3 +177,54 @@ def process_passport_information(input_file_path):
     except Exception as e:
         logger.error(f"{ERROR_DF_CREATE}: {e}")
         raise
+
+
+# constant.py
+
+# Environment Paths
+DOCTR_CACHE_DIR = r"/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models/models/models"
+PADDLE_DET_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
+PADDLE_REC_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
+PADDLE_CLS_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer"
+PASSPORT_MODEL_PATH = r"/home/ko19678/japan_pipeline/ALL_Passport/best.pt"
+
+# Valid Dates
+VALID_ISSUE_DATE = "22 AUG 2010"
+VALID_EXPIRY_DATE = "22 AUG 2029"
+
+# Padding Values
+PADDING_RIGHT = 100
+PADDING_LEFT = 100
+PADDING_TOP = 100
+PADDING_BOTTOM = 100
+
+# Logging Messages
+LOGGING_LEVEL_PPOCR = "WARNING"
+LOG_PREDICTING_TEXT_DOCTR = "Extracting text using DocTR"
+LOG_PREDICTING_TEXT_PADDLE = "Extracting text using PaddleOCR"
+LOG_IMAGE_PROCESSING = "Processing image for OCR..."
+LOG_CROPPING_REGION = "Cropping detected region for label: {}"
+LOG_MRL_EXTRACTION = "Extracted MRL text for {}: {}"
+LOG_DOCTR_EXTRACTION = "Extracted non-MRL text: {}"
+LOG_FINAL_OUTPUT = "Final extracted data frame: \n{}"
+
+# Labels
+LABEL_MRL_ONE = "MRL_One"
+LABEL_MRL_SECOND = "MRL_Second"
+
+# Gender Mapping
+GENDER_MAPPING = {
+    "M": "Male",
+    "F": "Female",
+    "X": "Unspecified",
+    "<": "Unspecified"
+}
+
+# Error / Fallback Messages
+UNKNOWN = "Unknown"
+INVALID_DATE = "Invalid Date"
+N_A = "N/A"
+
+# DataFrame Columns
+COLUMN_LABEL = "Label"
+COLUMN_EXTRACTED_TEXT = "Extracted Text"
