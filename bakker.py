@@ -1,91 +1,177 @@
 
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-import numpy as np
+import os
 import cv2
+import numpy as np
 import pandas as pd
-from mrl_passport import process_passport_information
-import uvicorn
-from io import BytesIO
-import tempfile
-import fitz  # PyMuPDF
+import re
 from PIL import Image
-import traceback
+from ultralytics import YOLO
+from paddleocr import PaddleOCR
+from doctr.models import ocr_predictor
+
 from logger_config import logger
 from constant import (
-    ERROR_UNSUPPORTED_FORMAT, ERROR_IMAGE_PROCESSING, ERROR_PDF_PROCESSING,
-    ERROR_TIFF_PROCESSING, ERROR_PROCESSING, ERROR_DECODE_IMAGE,
-    SUCCESS_RESPONSE, ERROR_RESPONSE
+    DOCTR_CACHE_DIR, USE_TORCH,
+    DET_MODEL_DIR, REC_MODEL_DIR, CLS_MODEL_DIR,
+    MRL_MODEL_PATH, LANG,
+    INVALID_IMAGE_MODE, EXTRACT_DOCTR_LOG, EXTRACT_PADDLE_LOG,
+    PARSE_MRZ_LOG, PROCESS_START_LOG, PROCESS_COMPLETE_LOG,
+    PARSE_EXCEPTION_LOG, PROCESS_EXCEPTION_LOG
 )
 
-app = FastAPI()
+# Configure environment
+os.environ["DOCTR_CACHE_DIR"] = DOCTR_CACHE_DIR
+os.environ["USE_TORCH"] = USE_TORCH
 
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...)):
+# Load models
+ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
+paddle_ocr = PaddleOCR(
+    lang=LANG,
+    use_angle_cls=False,
+    use_gpu=False,
+    det=True,
+    rec=True,
+    cls=False,
+    det_model_dir=DET_MODEL_DIR,
+    rec_model_dir=REC_MODEL_DIR,
+    cls_model_dir=CLS_MODEL_DIR
+)
+
+def preprocess_image(image_path):
     try:
-        contents = await file.read()
-        file_ext = file.filename.split(".")[-1].lower()
-        images = []
+        image = Image.open(image_path)
+        if image.mode != 'RGB':
+            logger.warning(INVALID_IMAGE_MODE)
+            image = image.convert('RGB')
+        return image
+    except Exception as e:
+        logger.exception(f"Error in preprocess_image: {e}")
+        raise
 
-        if file_ext in ["jpg", "jpeg", "png"]:
-            try:
-                image_np = np.frombuffer(contents, np.uint8)
-                image_cv2 = cv2.imdecode(image_np, cv2.IMREAD_COLOR)
-                if image_cv2 is None:
-                    raise ValueError(ERROR_DECODE_IMAGE)
-                images.append(image_cv2)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=ERROR_IMAGE_PROCESSING.format(str(e)))
+def add_fixed_padding(image, right=100, left=100, top=100, bottom=100):
+    width, height = image.size
+    new_width = width + right + left
+    new_height = height + top + bottom
+    color = (255, 255, 255) if image.mode == 'RGB' else 0
+    result = Image.new(image.mode, (new_width, new_height), color)
+    result.paste(image, (left, top))
+    return result
 
-        elif file_ext == "pdf":
-            try:
-                pdf_doc = fitz.open(stream=contents, filetype="pdf")
-                for page in pdf_doc:
-                    pix = page.get_pixmap()
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    image_cv2 = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                    images.append(image_cv2)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=ERROR_PDF_PROCESSING.format(str(e)))
+def extract_text_doctr(image_cv2):
+    try:
+        logger.debug(EXTRACT_DOCTR_LOG)
+        result = ocr_model([image_cv2])
+        extracted_text = ""
+        if result.pages:
+            for page in result.pages:
+                for block in page.blocks:
+                    for line in block.lines:
+                        extracted_text += " ".join([word.value for word in line.words]) + " "
+        return extracted_text.strip()
+    except Exception as e:
+        logger.exception(f"Error in extract_text_doctr: {e}")
+        return ""
 
-        elif file_ext in ["tiff", "tif"]:
-            try:
-                with BytesIO(contents) as tiff_io:
-                    with Image.open(tiff_io) as img:
-                        for frame in range(img.n_frames):
-                            img.seek(frame)
-                            image_cv2 = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-                            images.append(image_cv2)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=ERROR_TIFF_PROCESSING.format(str(e)))
+def extract_text_paddle(image_cv2):
+    try:
+        logger.debug(EXTRACT_PADDLE_LOG)
+        result = paddle_ocr.ocr(image_cv2, cls=False)
+        extracted_text = ""
+        if result:
+            for line_group in result:
+                for line in line_group:
+                    extracted_text += line[1][0] + " "
+        return extracted_text.strip()
+    except Exception as e:
+        logger.exception(f"Error in extract_text_paddle: {e}")
+        return ""
 
-        else:
-            raise HTTPException(status_code=400, detail=ERROR_UNSUPPORTED_FORMAT)
+def parse_mrz(mrl1, mrl2):
+    try:
+        logger.debug(PARSE_MRZ_LOG)
+        mrl1 = mrl1.ljust(44, "<")[:44]
+        mrl2 = mrl2.ljust(44, "<")[:44]
 
-        results = []
-        for image in images:
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as temp_file:
-                    _, encoded_img = cv2.imencode(".jpg", image)
-                    temp_file.write(encoded_img.tobytes())
-                    temp_file_path = temp_file.name
+        document_type = mrl1[:2].strip("<")
+        country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
+        names_part = mrl1[5:].split("<<", 1)
+        surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
+        given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
 
-                result_df = process_passport_information(temp_file_path)
-                results.extend(result_df.to_dict(orient="records"))
-            except Exception as e:
-                logger.error(ERROR_PROCESSING.format(str(e)))
-                raise HTTPException(status_code=500, detail=ERROR_PROCESSING.format(str(e)))
+        passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
+        nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
 
-        return JSONResponse(content={"status": SUCCESS_RESPONSE, "data": results})
+        def format_date(ymd):
+            if len(ymd) != 6 or not ymd.isdigit():
+                return "Invalid Date"
+            yy, mm, dd = ymd[:2], ymd[2:4], ymd[4:6]
+            year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
+            return f"{dd}/{mm}/{year}"
+
+        dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
+        gender_code = mrl2[20] if len(mrl2) > 20 else "X"
+        gender_map = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
+        gender = gender_map.get(gender_code, "Unspecified")
+        expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
+        optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
+
+        data = [
+            ("Document Type", document_type),
+            ("Issuing Country", country_code),
+            ("Surname", surname),
+            ("Given Names", given_names),
+            ("Passport Number", passport_number),
+            ("Nationality", nationality),
+            ("Date of Birth", dob),
+            ("Gender", gender),
+            ("Expiry Date", expiry_date),
+            ("Optional Data", optional_data)
+        ]
+
+        return pd.DataFrame(data, columns=["Label", "Extracted Text"])
+    except Exception as e:
+        logger.exception(PARSE_EXCEPTION_LOG)
+        return pd.DataFrame(columns=["Label", "Extracted Text"])
+
+def process_passport_information(image_path):
+    try:
+        logger.info(PROCESS_START_LOG)
+        model = YOLO(MRL_MODEL_PATH)
+        input_image = preprocess_image(image_path)
+        results = model(input_image)
+        input_image = Image.open(image_path)
+
+        output = []
+        mrz_data = {"MRL_One": None, "MRL_Second": None}
+
+        for result in results:
+            boxes = result.boxes
+            for box in boxes:
+                cls_id = int(box.cls[0])
+                label = result.names[cls_id]
+                bbox = box.xyxy.tolist()[0]
+
+                cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+                padded_image = add_fixed_padding(cropped_image)
+                cropped_np = np.array(padded_image)
+                cropped_cv2 = cv2.cvtColor(cropped_np, cv2.COLOR_RGB2BGR)
+
+                if label in ["MRL_One", "MRL_Second"]:
+                    text = extract_text_paddle(cropped_cv2)
+                    mrz_data[label] = text
+                else:
+                    text = extract_text_doctr(cropped_cv2)
+                    output.append({'Label': label, 'Extracted Text': text})
+
+        if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
+            mrz_df = parse_mrz(mrz_data["MRL_One"], mrz_data["MRL_Second"])
+            output.extend(mrz_df.to_dict(orient="records"))
+
+        df = pd.DataFrame(output)
+        logger.info(PROCESS_COMPLETE_LOG)
+        return df
 
     except Exception as e:
-        error_message = traceback.format_exc()
-        logger.exception("Exception in upload_file endpoint")
-        return JSONResponse(
-            status_code=500,
-            content={"status": ERROR_RESPONSE, "message": str(e), "trace": error_message}
-        )
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8888)
+        logger.exception(PROCESS_EXCEPTION_LOG)
+        return pd.DataFrame(columns=["Label", "Extracted Text"])
