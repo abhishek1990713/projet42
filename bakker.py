@@ -1,71 +1,42 @@
 
 
+# mrl_passport.py
+from PIL import Image
 import os
-import logging
 import numpy as np
+import logging
 import cv2
 import pandas as pd
 import re
-from PIL import Image
-from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from doctr.models import ocr_predictor
-from mrz_url import parse_wrz_url
-from constant import (
-    ENV_DOCTR_CACHE_DIR,
-    ENV_USE_TORCH,
-    LOG_PPOCR_LEVEL,
-    PADDLE_MODEL_PATHS,
-    YOLO_MODEL_PATH,
-    ERROR_ENV_SETUP,
-    ERROR_MODEL_INIT,
-    ERROR_PREPROCESSING,
-    ERROR_PADDING,
-    ERROR_DOCTR_OCR,
-    ERROR_PADDLE_OCR,
-    ERROR_YOLO_LOAD,
-    ERROR_YOLO_RUN,
-    ERROR_BOX_PROCESS,
-    ERROR_BBOX_PROCESS,
-    ERROR_MRZ_PARSE,
-    ERROR_DF_CREATE,
-    LOG_EXTRACT_LABEL
-)
+from logger_config import setup_logger
 
-# Logging configuration
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logging.getLogger(LOG_PPOCR_LEVEL).setLevel(logging.WARNING)
+logger = setup_logger("mrl_passport", "passport.log")
 
-# Environment setup
-try:
-    os.environ["DOCTR_CACHE_DIR"] = ENV_DOCTR_CACHE_DIR
-    os.environ["USE_TORCH"] = ENV_USE_TORCH
-except Exception as e:
-    logger.error(f"{ERROR_ENV_SETUP}: {e}")
+os.environ["DOCTR_CACHE_DIR"] = r"/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models/models/models"
+os.environ['USE_TORCH'] = '1'
 
-# Load models
 try:
     ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
-
-    det_model_dir = PADDLE_MODEL_PATHS['det']
-    rec_model_dir = PADDLE_MODEL_PATHS['rec']
-    cls_model_dir = PADDLE_MODEL_PATHS['cls']
-
-    paddle_ocr = PaddleOCR(
-        lang='en',
-        use_angle_cls=False,
-        use_gpu=False,
-        det=True,
-        rec=True,
-        cls=False,
-        det_model_dir=det_model_dir,
-        rec_model_dir=rec_model_dir,
-        cls_model_dir=cls_model_dir
-    )
 except Exception as e:
-    logger.exception(f"{ERROR_MODEL_INIT}: {e}")
+    logger.error(f"Failed to load doctr model: {e}")
     raise
+
+det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
+rec_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
+cls_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer"
+
+try:
+    paddle_ocr = PaddleOCR(lang='en', use_angle_cls=False, use_gpu=False, det=True, rec=True,
+                           cls=False, det_model_dir=det_model_dir, rec_model_dir=rec_model_dir,
+                           cls_model_dir=cls_model_dir)
+except Exception as e:
+    logger.error(f"Failed to load paddleocr model: {e}")
+    raise
+
+passport_model_path = r"/home/ko19678/japan_pipeline/ALL_Passport/best.pt"
+
 
 def preprocess_image(image_path):
     try:
@@ -74,21 +45,23 @@ def preprocess_image(image_path):
             image = image.convert('RGB')
         return image
     except Exception as e:
-        logger.error(f"{ERROR_PREPROCESSING}: {e}")
+        logger.error(f"Error in preprocess_image: {e}")
         raise
+
 
 def add_fixed_padding(image, right=100, left=100, top=100, bottom=100):
     try:
         width, height = image.size
         new_width = width + right + left
         new_height = height + top + bottom
-        color = (255, 255, 255) if image.mode == 'RGB' else 0
+        color = (255, 255, 255) if image.mode == 'RGB' else 255
         result = Image.new(image.mode, (new_width, new_height), color)
         result.paste(image, (left, top))
         return result
     except Exception as e:
-        logger.error(f"{ERROR_PADDING}: {e}")
+        logger.error(f"Error in add_fixed_padding: {e}")
         raise
+
 
 def extract_text_doctr(image_cv2):
     try:
@@ -101,8 +74,9 @@ def extract_text_doctr(image_cv2):
                         extracted_text += " ".join([word.value for word in line.words]) + " "
         return extracted_text.strip()
     except Exception as e:
-        logger.error(f"{ERROR_DOCTR_OCR}: {e}")
-        return ""
+        logger.error(f"Error in extract_text_doctr: {e}")
+        raise
+
 
 def extract_text_paddle(image_cv2):
     try:
@@ -114,117 +88,51 @@ def extract_text_paddle(image_cv2):
                     extracted_text += line[1][0] + " "
         return extracted_text.strip()
     except Exception as e:
-        logger.error(f"{ERROR_PADDLE_OCR}: {e}")
-        return ""
-
-def process_passport_information(input_file_path):
-    try:
-        model = YOLO(YOLO_MODEL_PATH)
-    except Exception as e:
-        logger.error(f"{ERROR_YOLO_LOAD}: {e}")
-        raise
-
-    try:
-        input_image = preprocess_image(input_file_path)
-        results = model(input_image)
-        input_image = Image.open(input_file_path)
-    except Exception as e:
-        logger.error(f"{ERROR_YOLO_RUN}: {e}")
-        raise
-
-    output = []
-    mrz_data = {"MRL_One": None, "MRL_Second": None}
-
-    try:
-        for result in results:
-            boxes = result.boxes
-            for box in boxes:
-                try:
-                    cls_id = int(box.cls[0])
-                    label = result.names[cls_id]
-                    bbox = box.xyxy.tolist()[0]
-
-                    cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
-                    padded_image = add_fixed_padding(cropped_image)
-                    cropped_image_np = np.array(padded_image)
-                    cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
-
-                    if label in ["MRL_One", "MRL_Second"]:
-                        extracted_text = extract_text_paddle(cropped_image_cv2)
-                        logger.info(LOG_EXTRACT_LABEL.format(label, extracted_text))
-                        mrz_data[label] = extracted_text
-                    else:
-                        extracted_text = extract_text_doctr(cropped_image_cv2)
-                        logger.info(LOG_EXTRACT_LABEL.format(label, extracted_text))
-                        output.append({'Label': label, 'Extracted Text': extracted_text})
-                except Exception as e:
-                    logger.warning(f"{ERROR_BOX_PROCESS}: {e}")
-                    continue
-    except Exception as e:
-        logger.error(f"{ERROR_BBOX_PROCESS}: {e}")
-        raise
-
-    try:
-        if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
-            mrz_df = parse_wrz_url(mrz_data["MRL_One"], mrz_data["MRL_Second"])
-            output.extend(mrz_df.to_dict(orient="records"))
-    except Exception as e:
-        logger.error(f"{ERROR_MRZ_PARSE}: {e}")
-
-    try:
-        data = pd.DataFrame(output)
-        return data
-    except Exception as e:
-        logger.error(f"{ERROR_DF_CREATE}: {e}")
+        logger.error(f"PaddleOCR extraction failed: {e}")
         raise
 
 
-# constant.py
+def parse_mrz(mrl1, mrl2):
+    try:
+        mrl1 = mrl1.ljust(44, "<")[:44]
+        mrl2 = mrl2.ljust(44, "<")[:44]
 
-# Environment Paths
-DOCTR_CACHE_DIR = r"/home/ko19678/japan_pipeline/ALL_Passport/DocTR_Models/models/models"
-PADDLE_DET_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
-PADDLE_REC_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
-PADDLE_CLS_MODEL_DIR = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/ch_ppocr_mobile_v2.0_cls_infer"
-PASSPORT_MODEL_PATH = r"/home/ko19678/japan_pipeline/ALL_Passport/best.pt"
+        document_type = mrl1[:2].strip("<")
+        country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
+        names_part = mrl1[5:].split("<<", 1)
+        surname = re.sub(r"<+", "", names_part[0]).strip() if names_part else "Unknown"
+        given_names = re.sub(r"<+", "", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
+        passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
+        nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
 
-# Valid Dates
-VALID_ISSUE_DATE = "22 AUG 2010"
-VALID_EXPIRY_DATE = "22 AUG 2029"
+        def format_date(yyMMdd):
+            if len(yyMMdd) != 6 or not yyMMdd.isdigit():
+                return "Invalid Date"
+            yy, mm, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
+            year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
+            return f"{dd}/{mm}/{year}"
 
-# Padding Values
-PADDING_RIGHT = 100
-PADDING_LEFT = 100
-PADDING_TOP = 100
-PADDING_BOTTOM = 100
+        dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
+        expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
+        gender_code = mrl2[20] if len(mrl2) > 20 else "X"
+        gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
+        gender = gender_mapping.get(gender_code, "Unspecified")
+        optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
 
-# Logging Messages
-LOGGING_LEVEL_PPOCR = "WARNING"
-LOG_PREDICTING_TEXT_DOCTR = "Extracting text using DocTR"
-LOG_PREDICTING_TEXT_PADDLE = "Extracting text using PaddleOCR"
-LOG_IMAGE_PROCESSING = "Processing image for OCR..."
-LOG_CROPPING_REGION = "Cropping detected region for label: {}"
-LOG_MRL_EXTRACTION = "Extracted MRL text for {}: {}"
-LOG_DOCTR_EXTRACTION = "Extracted non-MRL text: {}"
-LOG_FINAL_OUTPUT = "Final extracted data frame: \n{}"
+        data = [
+            ("Document Type", document_type),
+            ("Issuing Country", country_code),
+            ("Surname", surname),
+            ("Given Names", given_names),
+            ("Passport Number", passport_number),
+            ("Nationality", nationality),
+            ("Date of Birth", dob),
+            ("Gender", gender),
+            ("Expiry Date", expiry_date),
+        ]
 
-# Labels
-LABEL_MRL_ONE = "MRL_One"
-LABEL_MRL_SECOND = "MRL_Second"
-
-# Gender Mapping
-GENDER_MAPPING = {
-    "M": "Male",
-    "F": "Female",
-    "X": "Unspecified",
-    "<": "Unspecified"
-}
-
-# Error / Fallback Messages
-UNKNOWN = "Unknown"
-INVALID_DATE = "Invalid Date"
-N_A = "N/A"
-
-# DataFrame Columns
-COLUMN_LABEL = "Label"
-COLUMN_EXTRACTED_TEXT = "Extracted Text"
+        df = pd.DataFrame(data, columns=["Label", "Extracted Text"])
+        return df
+    except Exception as e:
+        logger.error(f"Error in parse_mrz: {e}")
+        raise
