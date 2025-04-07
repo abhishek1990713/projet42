@@ -144,3 +144,122 @@ def parse_mrz(mrl1, mrl2):
     except Exception as e:
         logger.exception("Error in parse_mrz")
         raise
+
+
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+import cv2
+import numpy as np
+from PIL import Image, UnidentifiedImageError
+from io import BytesIO
+import fitz  # PyMuPDF
+import tempfile
+import uvicorn
+import os
+
+from mrl_passport import process_passport_information
+from logger_config import setup_logger
+
+logger = setup_logger("app_logger", "passport.log")
+
+app = FastAPI()
+
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    logger.info("Received file upload request")
+    try:
+        contents = await file.read()
+        logger.info(f"Successfully read file: {file.filename}")
+    except Exception as e:
+        logger.error(f"Failed to read file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+    file_ext = file.filename.split(".")[-1].lower()
+    images = []
+
+    try:
+        if file_ext in ["jpg", "jpeg", "png"]:
+            logger.info("Processing as image file")
+            image_np = np.frombuffer(contents, np.uint8)
+            image_cv2 = cv2.imdecode(image_np, cv2.IMREAD_COLOR)
+            if image_cv2 is None:
+                logger.error("Invalid image format")
+                raise HTTPException(status_code=400, detail="Invalid image format.")
+            images.append(image_cv2)
+
+        elif file_ext == "pdf":
+            logger.info("Processing as PDF file")
+            try:
+                pdf_doc = fitz.open(stream=contents, filetype="pdf")
+                for page in pdf_doc:
+                    pix = page.get_pixmap()
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    image_cv2 = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                    images.append(image_cv2)
+            except Exception as e:
+                logger.error(f"Failed to process PDF: {e}")
+                raise HTTPException(status_code=400, detail=f"Failed to process PDF: {str(e)}")
+
+        elif file_ext in ["tiff", "tif"]:
+            logger.info("Processing as TIFF file")
+            try:
+                with BytesIO(contents) as tiff_io:
+                    with Image.open(tiff_io) as img:
+                        for frame in range(img.n_frames):
+                            img.seek(frame)
+                            image_cv2 = cv2.cvtColor(np.array(img.convert('RGB')), cv2.COLOR_RGB2BGR)
+                            images.append(image_cv2)
+            except UnidentifiedImageError:
+                logger.error("Cannot identify TIFF image")
+                raise HTTPException(status_code=400, detail="Cannot identify TIFF image.")
+            except Exception as e:
+                logger.error(f"Failed to process TIFF: {e}")
+                raise HTTPException(status_code=400, detail=f"Failed to process TIFF: {str(e)}")
+
+        else:
+            logger.error("Unsupported file format")
+            raise HTTPException(status_code=400, detail="Unsupported file format.")
+
+    except HTTPException as http_err:
+        logger.warning(f"HTTP error during image extraction: {http_err.detail}")
+        raise http_err
+    except Exception as e:
+        logger.error(f"Image processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Image processing error: {str(e)}")
+
+    results = []
+
+    for idx, image in enumerate(images):
+        try:
+            logger.info(f"Processing image {idx + 1}/{len(images)}")
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+                success, encoded_img = cv2.imencode(".jpg", image)
+                if not success:
+                    logger.error("Failed to encode image")
+                    raise ValueError("Failed to encode image.")
+                temp_file.write(encoded_img.tobytes())
+                temp_file_path = temp_file.name
+
+            logger.info(f"Temporary file created: {temp_file_path}")
+            result_df = process_passport_information(temp_file_path)
+
+            if result_df is None:
+                logger.warning(f"No data extracted from image {idx + 1}")
+                raise ValueError("No data extracted from passport.")
+
+            result_json = result_df.to_dict(orient='records')
+            results.extend(result_json)
+            logger.info(f"Extraction complete for image {idx + 1}")
+
+            os.remove(temp_file_path)
+            logger.info(f"Temporary file deleted: {temp_file_path}")
+
+        except Exception as e:
+            logger.error(f"Error during passport processing for image {idx+1}: {e}")
+            raise HTTPException(status_code=500, detail=f"Error during passport processing for image {idx+1}: {str(e)}")
+
+    logger.info("All image processing complete, returning results")
+    return JSONResponse(content={"status": "success", "data": results})
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8088)
