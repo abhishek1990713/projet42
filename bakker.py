@@ -1,177 +1,179 @@
 
 
 import os
-import cv2
+import logging
 import numpy as np
+import cv2
 import pandas as pd
 import re
 from PIL import Image
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from doctr.models import ocr_predictor
-
-from logger_config import logger
+from mrz_url import parse_wrz_url
 from constant import (
-    DOCTR_CACHE_DIR, USE_TORCH,
-    DET_MODEL_DIR, REC_MODEL_DIR, CLS_MODEL_DIR,
-    MRL_MODEL_PATH, LANG,
-    INVALID_IMAGE_MODE, EXTRACT_DOCTR_LOG, EXTRACT_PADDLE_LOG,
-    PARSE_MRZ_LOG, PROCESS_START_LOG, PROCESS_COMPLETE_LOG,
-    PARSE_EXCEPTION_LOG, PROCESS_EXCEPTION_LOG
+    ENV_DOCTR_CACHE_DIR,
+    ENV_USE_TORCH,
+    LOG_PPOCR_LEVEL,
+    PADDLE_MODEL_PATHS,
+    YOLO_MODEL_PATH,
+    ERROR_ENV_SETUP,
+    ERROR_MODEL_INIT,
+    ERROR_PREPROCESSING,
+    ERROR_PADDING,
+    ERROR_DOCTR_OCR,
+    ERROR_PADDLE_OCR,
+    ERROR_YOLO_LOAD,
+    ERROR_YOLO_RUN,
+    ERROR_BOX_PROCESS,
+    ERROR_BBOX_PROCESS,
+    ERROR_MRZ_PARSE,
+    ERROR_DF_CREATE,
+    LOG_EXTRACT_LABEL
 )
 
-# Configure environment
-os.environ["DOCTR_CACHE_DIR"] = DOCTR_CACHE_DIR
-os.environ["USE_TORCH"] = USE_TORCH
+# Logging configuration
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logging.getLogger(LOG_PPOCR_LEVEL).setLevel(logging.WARNING)
+
+# Environment setup
+try:
+    os.environ["DOCTR_CACHE_DIR"] = ENV_DOCTR_CACHE_DIR
+    os.environ["USE_TORCH"] = ENV_USE_TORCH
+except Exception as e:
+    logger.error(f"{ERROR_ENV_SETUP}: {e}")
 
 # Load models
-ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
-paddle_ocr = PaddleOCR(
-    lang=LANG,
-    use_angle_cls=False,
-    use_gpu=False,
-    det=True,
-    rec=True,
-    cls=False,
-    det_model_dir=DET_MODEL_DIR,
-    rec_model_dir=REC_MODEL_DIR,
-    cls_model_dir=CLS_MODEL_DIR
-)
+try:
+    ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
+
+    det_model_dir = PADDLE_MODEL_PATHS['det']
+    rec_model_dir = PADDLE_MODEL_PATHS['rec']
+    cls_model_dir = PADDLE_MODEL_PATHS['cls']
+
+    paddle_ocr = PaddleOCR(
+        lang='en',
+        use_angle_cls=False,
+        use_gpu=False,
+        det=True,
+        rec=True,
+        cls=False,
+        det_model_dir=det_model_dir,
+        rec_model_dir=rec_model_dir,
+        cls_model_dir=cls_model_dir
+    )
+except Exception as e:
+    logger.exception(f"{ERROR_MODEL_INIT}: {e}")
+    raise
 
 def preprocess_image(image_path):
     try:
         image = Image.open(image_path)
         if image.mode != 'RGB':
-            logger.warning(INVALID_IMAGE_MODE)
             image = image.convert('RGB')
         return image
     except Exception as e:
-        logger.exception(f"Error in preprocess_image: {e}")
+        logger.error(f"{ERROR_PREPROCESSING}: {e}")
         raise
 
 def add_fixed_padding(image, right=100, left=100, top=100, bottom=100):
-    width, height = image.size
-    new_width = width + right + left
-    new_height = height + top + bottom
-    color = (255, 255, 255) if image.mode == 'RGB' else 0
-    result = Image.new(image.mode, (new_width, new_height), color)
-    result.paste(image, (left, top))
-    return result
+    try:
+        width, height = image.size
+        new_width = width + right + left
+        new_height = height + top + bottom
+        color = (255, 255, 255) if image.mode == 'RGB' else 0
+        result = Image.new(image.mode, (new_width, new_height), color)
+        result.paste(image, (left, top))
+        return result
+    except Exception as e:
+        logger.error(f"{ERROR_PADDING}: {e}")
+        raise
 
 def extract_text_doctr(image_cv2):
     try:
-        logger.debug(EXTRACT_DOCTR_LOG)
-        result = ocr_model([image_cv2])
+        result_texts = ocr_model([image_cv2])
         extracted_text = ""
-        if result.pages:
-            for page in result.pages:
+        if result_texts.pages:
+            for page in result_texts.pages:
                 for block in page.blocks:
                     for line in block.lines:
                         extracted_text += " ".join([word.value for word in line.words]) + " "
         return extracted_text.strip()
     except Exception as e:
-        logger.exception(f"Error in extract_text_doctr: {e}")
+        logger.error(f"{ERROR_DOCTR_OCR}: {e}")
         return ""
 
 def extract_text_paddle(image_cv2):
     try:
-        logger.debug(EXTRACT_PADDLE_LOG)
-        result = paddle_ocr.ocr(image_cv2, cls=False)
+        result_texts = paddle_ocr.ocr(image_cv2, cls=False)
         extracted_text = ""
-        if result:
-            for line_group in result:
-                for line in line_group:
+        if result_texts:
+            for result in result_texts:
+                for line in result:
                     extracted_text += line[1][0] + " "
         return extracted_text.strip()
     except Exception as e:
-        logger.exception(f"Error in extract_text_paddle: {e}")
+        logger.error(f"{ERROR_PADDLE_OCR}: {e}")
         return ""
 
-def parse_mrz(mrl1, mrl2):
+def process_passport_information(input_file_path):
     try:
-        logger.debug(PARSE_MRZ_LOG)
-        mrl1 = mrl1.ljust(44, "<")[:44]
-        mrl2 = mrl2.ljust(44, "<")[:44]
-
-        document_type = mrl1[:2].strip("<")
-        country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
-        names_part = mrl1[5:].split("<<", 1)
-        surname = re.sub(r"<+", " ", names_part[0]).strip() if names_part else "Unknown"
-        given_names = re.sub(r"<+", " ", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
-
-        passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
-        nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
-
-        def format_date(ymd):
-            if len(ymd) != 6 or not ymd.isdigit():
-                return "Invalid Date"
-            yy, mm, dd = ymd[:2], ymd[2:4], ymd[4:6]
-            year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
-            return f"{dd}/{mm}/{year}"
-
-        dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
-        gender_code = mrl2[20] if len(mrl2) > 20 else "X"
-        gender_map = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-        gender = gender_map.get(gender_code, "Unspecified")
-        expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
-        optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
-
-        data = [
-            ("Document Type", document_type),
-            ("Issuing Country", country_code),
-            ("Surname", surname),
-            ("Given Names", given_names),
-            ("Passport Number", passport_number),
-            ("Nationality", nationality),
-            ("Date of Birth", dob),
-            ("Gender", gender),
-            ("Expiry Date", expiry_date),
-            ("Optional Data", optional_data)
-        ]
-
-        return pd.DataFrame(data, columns=["Label", "Extracted Text"])
+        model = YOLO(YOLO_MODEL_PATH)
     except Exception as e:
-        logger.exception(PARSE_EXCEPTION_LOG)
-        return pd.DataFrame(columns=["Label", "Extracted Text"])
+        logger.error(f"{ERROR_YOLO_LOAD}: {e}")
+        raise
 
-def process_passport_information(image_path):
     try:
-        logger.info(PROCESS_START_LOG)
-        model = YOLO(MRL_MODEL_PATH)
-        input_image = preprocess_image(image_path)
+        input_image = preprocess_image(input_file_path)
         results = model(input_image)
-        input_image = Image.open(image_path)
+        input_image = Image.open(input_file_path)
+    except Exception as e:
+        logger.error(f"{ERROR_YOLO_RUN}: {e}")
+        raise
 
-        output = []
-        mrz_data = {"MRL_One": None, "MRL_Second": None}
+    output = []
+    mrz_data = {"MRL_One": None, "MRL_Second": None}
 
+    try:
         for result in results:
             boxes = result.boxes
             for box in boxes:
-                cls_id = int(box.cls[0])
-                label = result.names[cls_id]
-                bbox = box.xyxy.tolist()[0]
+                try:
+                    cls_id = int(box.cls[0])
+                    label = result.names[cls_id]
+                    bbox = box.xyxy.tolist()[0]
 
-                cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
-                padded_image = add_fixed_padding(cropped_image)
-                cropped_np = np.array(padded_image)
-                cropped_cv2 = cv2.cvtColor(cropped_np, cv2.COLOR_RGB2BGR)
+                    cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+                    padded_image = add_fixed_padding(cropped_image)
+                    cropped_image_np = np.array(padded_image)
+                    cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
 
-                if label in ["MRL_One", "MRL_Second"]:
-                    text = extract_text_paddle(cropped_cv2)
-                    mrz_data[label] = text
-                else:
-                    text = extract_text_doctr(cropped_cv2)
-                    output.append({'Label': label, 'Extracted Text': text})
-
-        if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
-            mrz_df = parse_mrz(mrz_data["MRL_One"], mrz_data["MRL_Second"])
-            output.extend(mrz_df.to_dict(orient="records"))
-
-        df = pd.DataFrame(output)
-        logger.info(PROCESS_COMPLETE_LOG)
-        return df
-
+                    if label in ["MRL_One", "MRL_Second"]:
+                        extracted_text = extract_text_paddle(cropped_image_cv2)
+                        logger.info(LOG_EXTRACT_LABEL.format(label, extracted_text))
+                        mrz_data[label] = extracted_text
+                    else:
+                        extracted_text = extract_text_doctr(cropped_image_cv2)
+                        logger.info(LOG_EXTRACT_LABEL.format(label, extracted_text))
+                        output.append({'Label': label, 'Extracted Text': extracted_text})
+                except Exception as e:
+                    logger.warning(f"{ERROR_BOX_PROCESS}: {e}")
+                    continue
     except Exception as e:
-        logger.exception(PROCESS_EXCEPTION_LOG)
-        return pd.DataFrame(columns=["Label", "Extracted Text"])
+        logger.error(f"{ERROR_BBOX_PROCESS}: {e}")
+        raise
+
+    try:
+        if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
+            mrz_df = parse_wrz_url(mrz_data["MRL_One"], mrz_data["MRL_Second"])
+            output.extend(mrz_df.to_dict(orient="records"))
+    except Exception as e:
+        logger.error(f"{ERROR_MRZ_PARSE}: {e}")
+
+    try:
+        data = pd.DataFrame(output)
+        return data
+    except Exception as e:
+        logger.error(f"{ERROR_DF_CREATE}: {e}")
+        raise
