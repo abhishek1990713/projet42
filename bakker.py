@@ -6,7 +6,10 @@ from mrz_reader.reader import MRZReader
 # Constants
 SUPPORTED_FORMATS = (".png", ".jpg", ".jpeg", ".tif")
 INPUT_FOLDER = "input"
+OUTPUT_FOLDER = "output_folder"
 OUTPUT_EXCEL = "ocr_results.xlsx"
+
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)  # Ensure output folder exists
 
 # Model paths
 det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
@@ -42,6 +45,11 @@ for filename in os.listdir(INPUT_FOLDER):
                 }
             )
 
+            # Save segmented image
+            output_path = os.path.join(OUTPUT_FOLDER, filename)
+            cv2.imwrite(output_path, segmented_image)
+
+            # Store OCR results
             for bbox, text, confidence in text_results:
                 results_list.append({
                     "Filename": filename,
@@ -70,5 +78,4 @@ else:
     df_new.to_excel(OUTPUT_EXCEL, index=False)
 
 print(f"OCR results written to {OUTPUT_EXCEL}")
-
-
+print(f"Segmented images saved in '{OUTPUT_FOLDER}'")
