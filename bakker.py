@@ -1,15 +1,7 @@
+import re
 from arz_reader.reader import MRZReader
 
-def run_mrz_reader(image_path: str) -> list:
-    """
-    Run MRZReader to detect and recognize text from a passport image.
-
-    Args:
-        image_path (str): Path to the input image.
-
-    Returns:
-        list: Recognized text strings.
-    """
+def extract_mrz_text(image_path):
     # Define model paths
     det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
     rec_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
@@ -26,7 +18,7 @@ def run_mrz_reader(image_path: str) -> list:
         cls_model_dir=cls_model_dir
     )
 
-    # Define preprocessing configuration
+    # Define preprocessing options
     preprocess_config = {
         "do_preprocess": True,
         "skewness": True,
@@ -35,12 +27,36 @@ def run_mrz_reader(image_path: str) -> list:
     }
 
     # Run prediction
-    text_results, segmented_image, face = reader.predict(
+    text_results, _, _ = reader.predict(
         image_path,
         do_facedetect=True,
         preprocess_config=preprocess_config
     )
 
-    # Return only the recognized text
-    return [text for _, text, _ in text_results]
+    # Process each recognized text
+    cleaned_texts = []
+    for _, text, _ in text_results:
+        cleaned = text.replace(" ", "")
+        # Replace <S<, <SS<<, multiple S and K patterns with <
+        cleaned = re.sub(r"<S<|<SS<<|S{2,}", "<", cleaned)
+        cleaned = re.sub(r"<K<|<KK<<|K{2,}", "<", cleaned)
+        cleaned_texts.append(cleaned)
+
+    # Join all cleaned texts into a single string
+    full_mrz = ''.join(cleaned_texts)
+
+    # Split at the comma (if you want the MRZ part before and after the comma)
+    if ',' in full_mrz:
+        mrl_one, mrl_second = full_mrz.split(',', 1)
+    else:
+        # If no comma is found, return the whole MRZ text as mrl_one
+        mrl_one = full_mrz
+        mrl_second = ""
+
+    return mrl_one, mrl_second
+
+# Example usage:
+# mrl_one, mrl_second = extract_mrz_text("/path/to/image.png")
+# print(f"MRZ Part 1: {mrl_one}")
+# print(f"MRZ Part 2: {mrl_second}")
 
