@@ -33,30 +33,26 @@ def extract_mrz_text(image_path):
         preprocess_config=preprocess_config
     )
 
+    # Initialize lists to store cleaned lines
+    mrl_one = ""
+    mrl_second = ""
+
     # Process each recognized text
-    cleaned_texts = []
-    for _, text, _ in text_results:
+    for idx, (_, text, _) in enumerate(text_results):
         cleaned = text.replace(" ", "")
         # Replace <S<, <SS<<, multiple S and K patterns with <
         cleaned = re.sub(r"<S<|<SS<<|S{2,}", "<", cleaned)
         cleaned = re.sub(r"<K<|<KK<<|K{2,}", "<", cleaned)
-        cleaned_texts.append(cleaned)
-
-    # Join all cleaned texts into a single string
-    full_mrz = ''.join(cleaned_texts)
-
-    # Split at the comma (if you want the MRZ part before and after the comma)
-    if ',' in full_mrz:
-        mrl_one, mrl_second = full_mrz.split(',', 1)
-    else:
-        # If no comma is found, return the whole MRZ text as mrl_one
-        mrl_one = full_mrz
-        mrl_second = ""
+        
+        # Split into mrl_one and mrl_second based on line index
+        if idx == 0:
+            mrl_one = cleaned
+        elif idx == 1:
+            mrl_second = cleaned
 
     return mrl_one, mrl_second
 
 # Example usage:
 # mrl_one, mrl_second = extract_mrz_text("/path/to/image.png")
-# print(f"MRZ Part 1: {mrl_one}")
-# print(f"MRZ Part 2: {mrl_second}")
-
+# print("First Line:", mrl_one)
+# print("Second Line:", mrl_second)
