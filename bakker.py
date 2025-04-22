@@ -1,8 +1,15 @@
-
-import re
 from arz_reader.reader import MRZReader
 
-def extract_mrz_text(image_path):
+def run_mrz_reader(image_path: str) -> list:
+    """
+    Run MRZReader to detect and recognize text from a passport image.
+
+    Args:
+        image_path (str): Path to the input image.
+
+    Returns:
+        list: Recognized text strings.
+    """
     # Define model paths
     det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_det_infer"
     rec_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRv3_rec_infer"
@@ -19,7 +26,7 @@ def extract_mrz_text(image_path):
         cls_model_dir=cls_model_dir
     )
 
-    # Define preprocessing options
+    # Define preprocessing configuration
     preprocess_config = {
         "do_preprocess": True,
         "skewness": True,
@@ -28,23 +35,12 @@ def extract_mrz_text(image_path):
     }
 
     # Run prediction
-    text_results, _, _ = reader.predict(
+    text_results, segmented_image, face = reader.predict(
         image_path,
         do_facedetect=True,
         preprocess_config=preprocess_config
     )
 
-    # Process each recognized text
-    cleaned_texts = []
-    for _, text, _ in text_results:
-        cleaned = text.replace(" ", "")
-        # Replace <S<, <SS<<, multiple S and K patterns with <
-        cleaned = re.sub(r"<S<|<SS<<|S{2,}", "<", cleaned)
-        cleaned = re.sub(r"<K<|<KK<<|K{2,}", "<", cleaned)
-        cleaned_texts.append(cleaned)
+    # Return only the recognized text
+    return [text for _, text, _ in text_results]
 
-    return cleaned_texts
-
-# Example usage:
-# mrz_text = extract_mrz_text("/path/to/image.png")
-# print(mrz_text)
