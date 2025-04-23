@@ -1,18 +1,21 @@
+
+
 def extract_dob_from_mrz_line(second_line):
     if len(second_line) < 20:
-        return None  # Line is too short to contain a DOB
+        return None  # Line too short to contain DOB
 
-    dob_raw = second_line[13:19]  # MRZ index starts at 0
+    dob_raw = second_line[13:19]  # Positions 14–19 in MRZ are for DOB: YYMMDD
+
     year = dob_raw[:2]
     month = dob_raw[2:4]
     day = dob_raw[4:6]
 
-    # Handle century guessing (assuming 1900–2099 range)
-    current_year = int(str(year))
-    century = "20" if int(year) <= 30 else "19"  # You can adjust the threshold
-    full_year = century + year
+    # Guess century: if year >= 30 → 1900s, else 2000s
+    try:
+        full_year = int(year)
+        century = "19" if full_year > 30 else "20"
+        full_year_str = century + year
+    except ValueError:
+        return None  # In case the year is not digits
 
-    return f"{full_year}-{month}-{day}"
-second_line = "8262320915USA6063179F1955876940<774852"
-dob = extract_dob_from_mrz_line(second_line)
-print("Date of Birth:", dob)
+    return f"{full_year_str}-{month}-{day}"
