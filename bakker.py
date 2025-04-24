@@ -1,4 +1,3 @@
-
 import os
 import logging
 import cv2
@@ -9,14 +8,12 @@ from PIL import Image
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from doctr.models import ocr_predictor
-from many import extract_mrz_text  # Import from many.py
+from many import extract_mrz_text  # from many.py
 
-# Setup environment
 os.environ["DOCTR_CACHE_DIR"] = r"/home/ko19678/all_passport_fast_api/DocTR_models"
 os.environ['USE_TORCH'] = '1'
 logging.getLogger('ppocr').setLevel(logging.WARNING)
 
-# Load OCR models
 ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
 
 det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRV3_det_infer"
@@ -117,6 +114,7 @@ def process_passport_information(image_path):
 
     output = []
     mrz_data = {"MRL_One": None, "MRL_Second": None}
+    use_many_py = False
 
     for result in results:
         boxes = result.boxes
@@ -130,29 +128,34 @@ def process_passport_information(image_path):
             cropped_image_np = np.array(padded_image)
             cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
 
-            if label in ["MRL_One", "MRL_Second"]:
+            if label.lower() == "nationality":
+                extracted_text = extract_text_doctr(cropped_image_cv2)
+                output.append({'Label': label, 'Extracted Text': extracted_text})
+                nationality_value = extracted_text.strip().lower()
+                if nationality_value in ["unitedstateof america, usa", "usa", "united states", "united states of america"]:
+                    use_many_py = True
+            elif not use_many_py and label in ["MRL_One", "MRL_Second"]:
                 extracted_text = extract_text_paddle(cropped_image_cv2)
                 mrz_data[label] = extracted_text
+                output.append({'Label': label, 'Extracted Text': extracted_text})
             else:
                 extracted_text = extract_text_doctr(cropped_image_cv2)
+                output.append({'Label': label, 'Extracted Text': extracted_text})
 
-            print(f"{label}: {extracted_text}")
-            output.append({'Label': label, 'Extracted Text': extracted_text})
+    # If nationality is USA, use many.py logic
+    if use_many_py:
+        print("Nationality matched — using many.py to extract MRZ...")
+        mrl_one, mrl_second = extract_mrz_text(image_path)
+        print("MRL Line 1:", mrl_one)
+        print("MRL Line 2:", mrl_second)
+        parsed_df = parse_mrz(mrl_one, mrl_second)
+        output.extend(parsed_df.to_dict(orient="records"))
 
-            # Check nationality condition
-            if label.lower() == "nationality" and extracted_text.strip().lower() in [
-                "unitedstateof america, usa", "usa", "united states", "united states of america"
-            ]:
-                print("Nationality matched condition — extracting MRZ from many.py...")
-                mrl_one, mrl_second = extract_mrz_text(image_path)
-                print("MRL Line 1:", mrl_one)
-                print("MRL Line 2:", mrl_second)
-                parsed_df = parse_mrz(mrl_one, mrl_second)
-                output.extend(parsed_df.to_dict(orient="records"))
-
-    # Parse MRZ from YOLO if not done above
-    if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
+    # If not using many.py, but MRL lines found from YOLO
+    elif mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
+        print("Using YOLO-detected MRL lines for MRZ parsing...")
         mrz_df = parse_mrz(mrz_data["MRL_One"], mrz_data["MRL_Second"])
         output.extend(mrz_df.to_dict(orient="records"))
 
     return pd.DataFrame(output)
+
