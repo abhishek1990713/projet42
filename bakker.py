@@ -1,5 +1,3 @@
-
-
 from ultralytics import YOLO
 from PIL import Image
 import os
@@ -93,6 +91,18 @@ def process_passport_information(input_file_path):
     mrz_data = {"MRL_One": None, "MRL_Second": None}
     nationality = "Unknown"
 
+    # List of accepted nationalities
+    accepted_nationalities = [
+        "UNITED STATES OF AMERICA",
+        "CANADA",
+        "UNITED KINGDOM",
+        "AUSTRALIA",
+        "INDIA",
+        "JAPAN",
+        "GERMANY",
+        "FRANCE"
+    ]
+
     for result in results:
         boxes = result.boxes
         for box in boxes:
@@ -106,16 +116,18 @@ def process_passport_information(input_file_path):
             cropped_image_np = np.array(padded_image)
             cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
 
-            # If the label is "Nationality", check if it's "UNITED STATES OF AMERICA"
+            # If the label is "Nationality", check if it's in the accepted list
             if label == "Nationality":
                 extracted_text = extract_text_paddle(cropped_image_cv2)
                 print(f"Nationality: {extracted_text} ************")
 
-                if extracted_text == "UNITED STATES OF AMERICA":
-                    print("Extracting MRZ lines...")
+                nationality = extracted_text.strip()
+                if nationality in accepted_nationalities:
+                    print(f"Nationality {nationality} recognized. Extracting MRZ lines...")
                     mrz_data["MRL_One"], mrz_data["MRL_Second"] = extract_mrz_text(input_file_path)
                     print(f"MRL_One: {mrz_data['MRL_One']}, MRL_Second: {mrz_data['MRL_Second']}")
                 else:
+                    print(f"Nationality {nationality} not recognized. Using PaddleOCR for extraction.")
                     mrz_data[label] = extracted_text
             elif label in ["MRL_One", "MRL_Second"]:
                 extracted_text = extract_text_paddle(cropped_image_cv2)
@@ -126,6 +138,9 @@ def process_passport_information(input_file_path):
                 print(f"{label}: {extracted_text} @@@@@@@@@@@@@@@@@@@@@@@@@@@@")
                 output.append({'Label': label, 'Extracted Text': extracted_text})
 
+    # Include the nationality in the final output
+    output.append({'Label': 'Nationality', 'Extracted Text': nationality})
+
     # If both MRZ lines were extracted, parse them
     if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
         mrz_df = parse_mrz(mrz_data["MRL_One"], mrz_data["MRL_Second"])
@@ -133,3 +148,4 @@ def process_passport_information(input_file_path):
 
     data = pd.DataFrame(output)
     return data
+
