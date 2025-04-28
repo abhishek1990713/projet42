@@ -1,20 +1,28 @@
+
+
+from ultralytics import YOLO
+from PIL import Image
 import os
+import numpy as np
 import logging
 import cv2
-import re
-import numpy as np
 import pandas as pd
-from PIL import Image
-from ultralytics import YOLO
+import re
 from paddleocr import PaddleOCR
 from doctr.models import ocr_predictor
-from many import extract_mrz_text  # from many.py
+from arz.erl import parse_mrz_url
+from many import extract_mrz_text  # Import the function from many.py
+
+logging.getLogger('ppocr').setLevel(logging.WARNING)
 
 os.environ["DOCTR_CACHE_DIR"] = r"/home/ko19678/all_passport_fast_api/DocTR_models"
 os.environ['USE_TORCH'] = '1'
-logging.getLogger('ppocr').setLevel(logging.WARNING)
 
-ocr_model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
+ocr_model = ocr_predictor(
+    det_arch='db_resnet50',
+    reco_arch='crnn_vgg16_bn',
+    pretrained=True
+)
 
 det_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRV3_det_infer"
 rec_model_dir = r"/home/ko19678/japan_pipeline/japan_pipeline/paddle_model/en_PP-OCRV3_rec_infer"
@@ -44,12 +52,18 @@ def add_fixed_padding(image, right=100, left=100, top=100, bottom=100):
     width, height = image.size
     new_width = width + right + left
     new_height = height + top + bottom
-    color = (255, 255, 255) if image.mode == 'RGB' else 0
+
+    if image.mode == 'RGB':
+        color = (255, 255, 255)
+    else:
+        color = 0
+
     result = Image.new(image.mode, (new_width, new_height), color)
     result.paste(image, (left, top))
     return result
 
 def extract_text_doctr(image_cv2):
+    """Extract text using DocTR"""
     result_texts = ocr_model([image_cv2])
     extracted_text = ""
     if result_texts.pages:
@@ -60,6 +74,7 @@ def extract_text_doctr(image_cv2):
     return extracted_text.strip()
 
 def extract_text_paddle(image_cv2):
+    """Extract text using PaddleOCR"""
     result_texts = paddle_ocr.ocr(image_cv2, cls=False)
     extracted_text = ""
     if result_texts:
@@ -68,53 +83,15 @@ def extract_text_paddle(image_cv2):
                 extracted_text += line[1][0] + " "
     return extracted_text.strip()
 
-def parse_mrz(mrl1, mrl2):
-    mrl1 = mrl1.ljust(44, "<")[:44]
-    mrl2 = mrl2.ljust(44, "<")[:44]
-    document_type = mrl1[0:2].strip("<")
-    country_code = mrl1[2:5] if len(mrl1) > 5 else "Unknown"
-    names_part = mrl1[5:].split("<<", 1)
-    surname = re.sub(r"<+", "", names_part[0]).strip() if names_part else "Unknown"
-    given_names = re.sub(r"<+", "", names_part[1]).strip() if len(names_part) > 1 else "Unknown"
-    passport_number = re.sub(r"<+$", "", mrl2[:9]) if len(mrl2) > 9 else "Unknown"
-    nationality = mrl2[10:13].strip("<") if len(mrl2) > 13 else "Unknown"
-
-    def format_date(yyMMdd):
-        if len(yyMMdd) != 6 or not yyMMdd.isdigit():
-            return "Invalid Date"
-        yy, m, dd = yyMMdd[:2], yyMMdd[2:4], yyMMdd[4:6]
-        year = f"19{yy}" if int(yy) > 30 else f"20{yy}"
-        return f"{dd}/{m}/{year}"
-
-    dob = format_date(mrl2[13:19]) if len(mrl2) > 19 else "Unknown"
-    expiry_date = format_date(mrl2[21:27]) if len(mrl2) > 27 else "Unknown"
-    gender_code = mrl2[20] if len(mrl2) > 20 else "X"
-    gender_mapping = {"M": "Male", "F": "Female", "X": "Unspecified", "<": "Unspecified"}
-    gender = gender_mapping.get(gender_code, "Unspecified")
-    optional_data = re.sub(r"<+$", "", mrl2[28:]).strip() if len(mrl2) > 28 else "N/A"
-
-    data = [
-        ("Document Type", document_type),
-        ("Issuing Country", country_code),
-        ("Surname", surname),
-        ("Given Names", given_names),
-        ("Passport Number", passport_number),
-        ("Nationality", nationality),
-        ("Date of Birth", dob),
-        ("Gender", gender),
-        ("Expiry Date", expiry_date)
-    ]
-    return pd.DataFrame(data, columns=["Label", "Extracted Text"])
-
-def process_passport_information(image_path):
+def process_passport_information(input_file_path):
     model = YOLO(passport_model_path)
-    input_image = preprocess_image(image_path)
+    input_image = preprocess_image(input_file_path)
     results = model(input_image)
-    input_image = Image.open(image_path)
 
+    input_image = Image.open(input_file_path)
     output = []
     mrz_data = {"MRL_One": None, "MRL_Second": None}
-    use_many_py = False
+    nationality = "Unknown"
 
     for result in results:
         boxes = result.boxes
@@ -123,39 +100,36 @@ def process_passport_information(image_path):
             label = result.names[cls_id]
             bbox = box.xyxy.tolist()[0]
 
+            # Crop and pad image
             cropped_image = input_image.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
-            padded_image = add_fixed_padding(cropped_image)
+            padded_image = add_fixed_padding(cropped_image, right=100, left=100, top=100, bottom=100)
             cropped_image_np = np.array(padded_image)
             cropped_image_cv2 = cv2.cvtColor(cropped_image_np, cv2.COLOR_RGB2BGR)
 
-            if label.lower() == "nationality":
-                extracted_text = extract_text_doctr(cropped_image_cv2)
-                output.append({'Label': label, 'Extracted Text': extracted_text})
-                nationality_value = extracted_text.strip().lower()
-                if nationality_value in ["unitedstateof america, usa", "usa", "united states", "united states of america"]:
-                    use_many_py = True
-            elif not use_many_py and label in ["MRL_One", "MRL_Second"]:
+            # If the label is "Nationality", check if it's "UNITED STATES OF AMERICA"
+            if label == "Nationality":
                 extracted_text = extract_text_paddle(cropped_image_cv2)
+                print(f"Nationality: {extracted_text} ************")
+
+                if extracted_text == "UNITED STATES OF AMERICA":
+                    print("Extracting MRZ lines...")
+                    mrz_data["MRL_One"], mrz_data["MRL_Second"] = extract_mrz_text(input_file_path)
+                    print(f"MRL_One: {mrz_data['MRL_One']}, MRL_Second: {mrz_data['MRL_Second']}")
+                else:
+                    mrz_data[label] = extracted_text
+            elif label in ["MRL_One", "MRL_Second"]:
+                extracted_text = extract_text_paddle(cropped_image_cv2)
+                print(f"{label}: {extracted_text} ************")
                 mrz_data[label] = extracted_text
-                output.append({'Label': label, 'Extracted Text': extracted_text})
             else:
                 extracted_text = extract_text_doctr(cropped_image_cv2)
+                print(f"{label}: {extracted_text} @@@@@@@@@@@@@@@@@@@@@@@@@@@@")
                 output.append({'Label': label, 'Extracted Text': extracted_text})
 
-    # If nationality is USA, use many.py logic
-    if use_many_py:
-        print("Nationality matched — using many.py to extract MRZ...")
-        mrl_one, mrl_second = extract_mrz_text(image_path)
-        print("MRL Line 1:", mrl_one)
-        print("MRL Line 2:", mrl_second)
-        parsed_df = parse_mrz(mrl_one, mrl_second)
-        output.extend(parsed_df.to_dict(orient="records"))
-
-    # If not using many.py, but MRL lines found from YOLO
-    elif mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
-        print("Using YOLO-detected MRL lines for MRZ parsing...")
+    # If both MRZ lines were extracted, parse them
+    if mrz_data["MRL_One"] and mrz_data["MRL_Second"]:
         mrz_df = parse_mrz(mrz_data["MRL_One"], mrz_data["MRL_Second"])
         output.extend(mrz_df.to_dict(orient="records"))
 
-    return pd.DataFrame(output)
-
+    data = pd.DataFrame(output)
+    return data
