@@ -1,6 +1,8 @@
 
 import os
 import json
+import re
+from rapidfuzz import fuzz  # You may need to install: pip install rapidfuzz
 from gliner import GLiNER
 
 # Load GLiNER model
@@ -45,12 +47,14 @@ entity_types = [
     "fictional_universe", "mythology", "ritual", "holiday", "festival", "artifact", "tool", "furniture"
 ]
 
-# Optional label alias mapping
-label_alias = {
-    "passport_number": "id_number",
-    "gpe": "location",
-    "currency": "money"
-    # Add more aliases as needed
+# Label normalization map
+label_aliases = {
+    "org": "organization",
+    "loc": "location",
+    "place": "location",
+    "name": "person",
+    "e-mail": "email",
+    "url_address": "url",
 }
 
 # Chunk text with overlap
@@ -64,35 +68,89 @@ def chunk_text_with_overlap(text, max_words=250, overlap=50):
         i += max_words - overlap
     return chunks
 
-# Entity extraction with confidence filtering and alias mapping
-def extract_entities(text, entity_types, confidence_threshold=0.7):
+# Entity extraction
+def extract_entities(text, entity_types):
     chunks = chunk_text_with_overlap(text)
     all_entities = []
     for chunk in chunks:
-        try:
-            entities = model.predict_entities(chunk, entity_types)
-            for entity in entities:
-                if entity.get("score", 1.0) >= confidence_threshold:
-                    label = label_alias.get(entity["label"], entity["label"])
-                    all_entities.append({
-                        "text": entity["text"].strip(),
-                        "label": label,
-                        "score": round(entity.get("score", 1.0), 4)
-                    })
-        except Exception as e:
-            print(f"Error processing chunk: {e}")
+        entities = model.predict_entities(chunk, entity_types)
+        all_entities.extend(entities)
     return all_entities
 
-# Deduplicate entities
-def deduplicate_entities(entities):
-    seen = set()
-    unique_entities = []
-    for e in entities:
-        key = (e["text"].strip().lower(), e["label"])
-        if key not in seen:
-            seen.add(key)
-            unique_entities.append(e)
-    return unique_entities
+# Advanced post-processing
+def advanced_post_process(entities, label_aliases=None, confidence_threshold=0.6, fuzzy_threshold=90):
+    """
+    Advanced post-processing for entity extraction results.
+
+    Args:
+        entities (list): List of entity dicts with keys 'text', 'label', optionally 'score'.
+        label_aliases (dict): Optional dict to normalize labels, e.g., {"org": "organization"}.
+        confidence_threshold (float): Minimum score to keep an entity.
+        fuzzy_threshold (int): Similarity ratio (0-100) to consider entities duplicates.
+
+    Returns:
+        List of cleaned and deduplicated entities.
+    """
+
+    if label_aliases is None:
+        label_aliases = {}
+
+    def is_valid(entity):
+        text = entity["text"].strip()
+        label = entity["label"].lower()
+        score = entity.get("score", 1.0)
+
+        # Filter by confidence
+        if score < confidence_threshold or not text:
+            return False
+
+        # Basic regex validation for common types
+        if label == "email":
+            return bool(re.match(r"[^@]+@[^@]+\.[^@]+", text))
+        if label == "phone_number":
+            return bool(re.match(r"\+?\d[\d\s\-]{7,}\d", text))
+        if label == "url":
+            return bool(re.match(r"https?://\S+", text))
+        if label == "date":
+            return bool(re.match(r"\d{4}-\d{2}-\d{2}", text))
+
+        return True
+
+    def is_duplicate(new_ent, existing_ents):
+        # Check fuzzy text similarity and identical labels
+        for ent in existing_ents:
+            if ent["label"] == new_ent["label"]:
+                similarity = fuzz.ratio(ent["text"].lower(), new_ent["text"].lower())
+                if similarity >= fuzzy_threshold:
+                    return True
+        return False
+
+    cleaned_entities = []
+    for ent in entities:
+        ent["label"] = label_aliases.get(ent["label"].lower(), ent["label"].lower())
+        ent["text"] = ent["text"].strip()
+
+        if not is_valid(ent):
+            continue
+
+        if not is_duplicate(ent, cleaned_entities):
+            cleaned_entities.append(ent)
+
+    # Remove entities fully contained inside longer entities of same label
+    final_entities = []
+    for ent in cleaned_entities:
+        contained = False
+        for other in cleaned_entities:
+            if ent == other:
+                continue
+            if ent["label"] == other["label"] and ent["text"] in other["text"]:
+                if len(ent["text"]) < len(other["text"]):
+                    contained = True
+                    break
+        if not contained:
+            final_entities.append(ent)
+
+    return final_entities
 
 # Process all text files in a folder
 def process_folder(input_folder, output_folder):
@@ -103,7 +161,7 @@ def process_folder(input_folder, output_folder):
             with open(filepath, "r", encoding="utf-8") as f:
                 text = f.read()
             entities = extract_entities(text, entity_types)
-            deduped = deduplicate_entities(entities)
+            deduped = advanced_post_process(entities, label_aliases=label_aliases, confidence_threshold=0.6)
             output_filename = os.path.splitext(filename)[0] + ".json"
             output_path = os.path.join(output_folder, output_filename)
             with open(output_path, "w", encoding="utf-8") as out_file:
