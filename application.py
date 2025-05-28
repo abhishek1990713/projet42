@@ -1,138 +1,117 @@
-from __future__ import division, print_function
-import json
-import sys
+
 import os
-import glob
-import moviepy.editor as mp
-import ffmpeg
-import re
-import numpy as np
-import librosa
-#import pandas as pd
-# Flask utils
-from flask import Flask, redirect, url_for, request, render_template, jsonify
-from werkzeug.utils import secure_filename
-from flask_cors import CORS, cross_origin
-import tensorflow as tf
-from sklearn.preprocessing import LabelEncoder
-from moviepy.editor import concatenate_audioclips, AudioFileClip
-import pydub
-# Define a flask app
-app = Flask(__name__)
-CORS(app)
+import json
+from gliner import GLiNER
 
-data_path = "saved_models/best13.json"
-with open(data_path, "r") as fp:
-    data = json.load(fp)
+# Load GLiNER model
+model_path = "/home/ko19678/NER_gliner/model_gliner/glinerv2.5-pytorch-default-v1/gliner_model_v2.5"
+model = GLiNER.from_pretrained(model_path)
 
-y = np.array(data["mapping"])
-le = LabelEncoder()
-le.fit_transform(y)
+# Expanded label list (GLiNER v2.5 + extended categories)
+entity_types = [
+    # Standard entity types
+    "person", "organization", "location", "date", "time", "money", "percent", "event", "product", "work_of_art", "language",
+    "law", "facility", "gpe", "ordinal", "cardinal", "quantity", "nationality", "religion", "ideology",
+    "crime", "weapon", "vehicle", "disease", "medical_treatment", "medication", "anatomical_structure", "symptom",
+    "email", "phone_number", "url", "username", "ip_address", "mac_address", "hashtag", "stock_ticker",
 
+    # Technology
+    "programming_language", "software", "hardware", "os", "protocol", "file_format", "api", "framework",
 
+    # Science & Medicine
+    "biological_process", "chemical_substance", "gene", "protein", "cell_type", "scientific_term", "academic_field",
 
-SAMPLES_TO_CONSIDER = 22050
+    # Education
+    "academic_degree", "university", "school_subject", "course_name", "teacher", "student",
 
+    # Sports & Entertainment
+    "sports_team", "sports_event", "sports_league", "tournament", "video_game", "movie", "tv_show",
+    "book", "music_album", "song", "celebrity", "character",
 
-#print('Model loaded. Check http://127.0.0.1:5000/')
-SAMPLES_TO_CONSIDER = 22050
+    # Commerce
+    "currency", "measurement_unit", "brand", "model", "material", "clothing", "food", "drink", "color",
+    "price", "discount", "product_category", "review_score",
 
-MODEL_PATH = 'saved_models/best13.h5'
+    # Natural & Geographic
+    "animal", "plant", "weather", "terrain", "planet", "mountain", "river", "sea", "continent",
 
-# Load your trained model
-model_lstm = tf.keras.models.load_model(MODEL_PATH)
+    # Government, Legal, and ID
+    "government_agency", "document_type", "passport_number", "id_number", "case_number", "court", "judge",
 
+    # Social Media and Communication
+    "social_media_platform", "chat_app", "forum", "comment", "post", "reaction",
 
+    # Miscellaneous
+    "fictional_universe", "mythology", "ritual", "holiday", "festival", "artifact", "tool", "furniture"
+]
 
+# Optional label alias mapping
+label_alias = {
+    "passport_number": "id_number",
+    "gpe": "location",
+    "currency": "money"
+    # Add more aliases as needed
+}
 
-def model_predict( audio_path,num_mfcc=13, n_fft=2048, hop_length=512):
+# Chunk text with overlap
+def chunk_text_with_overlap(text, max_words=250, overlap=50):
+    words = text.split()
+    chunks = []
+    i = 0
+    while i < len(words):
+        chunk = words[i:i + max_words]
+        chunks.append(' '.join(chunk))
+        i += max_words - overlap
+    return chunks
 
-    # load audio file
-    signal, sample_rate = librosa.load(audio_path)
+# Entity extraction with confidence filtering and alias mapping
+def extract_entities(text, entity_types, confidence_threshold=0.7):
+    chunks = chunk_text_with_overlap(text)
+    all_entities = []
+    for chunk in chunks:
+        try:
+            entities = model.predict_entities(chunk, entity_types)
+            for entity in entities:
+                if entity.get("score", 1.0) >= confidence_threshold:
+                    label = label_alias.get(entity["label"], entity["label"])
+                    all_entities.append({
+                        "text": entity["text"].strip(),
+                        "label": label,
+                        "score": round(entity.get("score", 1.0), 4)
+                    })
+        except Exception as e:
+            print(f"Error processing chunk: {e}")
+    return all_entities
 
+# Deduplicate entities
+def deduplicate_entities(entities):
+    seen = set()
+    unique_entities = []
+    for e in entities:
+        key = (e["text"].strip().lower(), e["label"])
+        if key not in seen:
+            seen.add(key)
+            unique_entities.append(e)
+    return unique_entities
 
-    if len(signal) >= SAMPLES_TO_CONSIDER:
-        # ensure consistency of the length of the signal
-        signal = signal[:SAMPLES_TO_CONSIDER]
+# Process all text files in a folder
+def process_folder(input_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".txt"):
+            filepath = os.path.join(input_folder, filename)
+            with open(filepath, "r", encoding="utf-8") as f:
+                text = f.read()
+            entities = extract_entities(text, entity_types)
+            deduped = deduplicate_entities(entities)
+            output_filename = os.path.splitext(filename)[0] + ".json"
+            output_path = os.path.join(output_folder, output_filename)
+            with open(output_path, "w", encoding="utf-8") as out_file:
+                json.dump(deduped, out_file, indent=2, ensure_ascii=False)
+            print(f"Processed: {filename} -> {output_filename}")
 
-        # extract MFCCs
-        MFCCs = librosa.feature.mfcc(signal, sample_rate, n_mfcc=num_mfcc, n_fft=n_fft,
-                                     hop_length=hop_length)
-        MFCCs = MFCCs[np.newaxis, ..., np.newaxis]
-        feature_scaled = np.mean(MFCCs.T, axis=0)
-
-        return np.array([feature_scaled])
-
-    #return preds
-
-
-@app.route('/', methods=['GET'])
-def index():
-    # Main page
-    return render_template('index4.html')
-
-
-@app.route('/predict', methods=['GET', 'POST'])
-def Upload():
-    if request.method == 'GET':
-        files = glob.glob('uploads' + "/*")
-        print(files)
-        length = len(files)
-        print(length)
-        data_path = "saved_models/best13.json"
-        with open(data_path, "r") as fp:
-            data = json.load(fp)
-
-        abcd = np.array(data["labels" ][0])
-
-
-
-        for i in range(length):
-            prediction_feature = model_predict((files[i]))
-            print(files[i])
-            predicted_vector = np.argmax(model_lstm.predict(prediction_feature), axis=-1)
-            if predicted_vector == abcd:
-                predicted_class = le.inverse_transform(predicted_vector)
-                result = predicted_class[0]
-                name = str(result)
-                # result = result + '.wav'
-                # lst1 = audio_path( '/')
-                print(name)
-
-
-
-            else:
-                wav_file = pydub.AudioSegment.from_file(file=files[i],
-                                                        format="wav")
-                # Increase the volume by 10 dB
-                new_wav_file = wav_file + 10
-
-                # Reducing volume by 5
-                silent_wav_file = wav_file - 100
-
-                silent_wav_file.export(out_f=files[i],
-                                       format="wav")
-        files = glob.glob('uploads' + "/*")
-        print(files)
-        length = len(files)
-        print(length)
-        array = []
-        for i in range(length):
-            prediction_feature = AudioFileClip((files[i]))
-            array.append(prediction_feature)
-        final_audio = concatenate_audioclips(array)
-        final_audio.write_audiofile("output/output.wav")
-
-        for j in range(length):
-            os.remove((files[j]))
-
-
-
-
-
-        return str(result)
-    return None
-
-if __name__ == '__main__':
-    app.run(debug=True)
-    #app.run(host='0.0.0.0', port=5000, debug=True)
+# Example usage
+if __name__ == "__main__":
+    input_folder = "/home/ko19678/NER_gliner/New folder"
+    output_folder = "/home/ko19678/NER_gliner/New folder"
+    process_folder(input_folder, output_folder)
