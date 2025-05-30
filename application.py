@@ -1,7 +1,6 @@
-
-
 import os
 import json
+import re
 from gliner import GLINER
 
 # Load GLiNER model
@@ -10,18 +9,13 @@ model = GLINER.from_pretrained(model_path)
 
 # Define entity types
 entity_types = [
-    "person", "organization", "company", "business", "corporation", "institute", "limited company",
-    "LLC", "Inc", "Ltd", "Limited", "location", "city", "country", "state", "province", "region",
-    "gpe", "address", "postal code", "zip code", "email", "website", "URL", "phone number", "fax number",
-    "bank", "account number", "BIC_code/Swift_code", "IBAN", "transaction id", "invoice number",
-    "amount", "currency", "product", "service", "item", "brand", "date", "datetime", 
-    "document number", "registration number", "tax ID"
+    "person", "organization", "location", "gpe", "company", "address",
+    "product", "bank", "country", "state", "website", "email", "BIC_code/Swift_code"
 ]
 
-# Optional: set minimum score threshold
-MIN_CONFIDENCE = 0.0  # Set to 0.85 to filter low-confidence entities
+MIN_CONFIDENCE = 0.2  # Minimum score to include GLiNER entity
 
-# Chunking function
+# Chunk text with overlap for large documents
 def chunk_text_with_overlap(text, max_words=250, overlap=50):
     words = text.split()
     chunks = []
@@ -32,10 +26,35 @@ def chunk_text_with_overlap(text, max_words=250, overlap=50):
         i += max_words - overlap
     return chunks
 
-# Entity extraction with confidence filtering
+# Extract structured entities using regex
+def extract_regex_entities(text):
+    regex_patterns = {
+        "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+        "website": r"https?://[^\s]+|www\.[^\s]+",
+        "phone number": r"(?:(?:\+|00)[0-9]{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}",
+        "BIC_code/Swift_code": r"\b[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?\b",
+        "invoice number": r"(?:INV[- ]?)?\d{4,10}",
+        "amount": r"[$€¥₹]?\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?",
+        "date": r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b",
+        "company": r"\b\w+(?:\s\w+)*(?:\sLtd\.|\sInc\.|\sLLC|\sLimited)\b"
+    }
+
+    results = []
+    for label, pattern in regex_patterns.items():
+        matches = re.finditer(pattern, text)
+        for match in matches:
+            results.append({
+                "text": match.group().strip(),
+                "label": label,
+                "score": 1.0
+            })
+    return results
+
+# Extract entities using GLiNER and regex
 def extract_entities(text, entity_types):
     chunks = chunk_text_with_overlap(text)
     all_entities = []
+
     for chunk in chunks:
         entities = model.predict_entities(chunk, entity_types)
         for e in entities:
@@ -45,14 +64,19 @@ def extract_entities(text, entity_types):
                     "label": e["label"],
                     "score": round(e.get("score", 1.0), 4)
                 })
+
+    # Add regex results
+    regex_entities = extract_regex_entities(text)
+    all_entities.extend(regex_entities)
+
     return all_entities
 
-# Deduplicate entities based on text + label
+# Deduplicate by (text, label)
 def deduplicate_entities(entities):
     seen = set()
     unique_entities = []
     for e in entities:
-        key = (e["text"].strip().lower(), e["label"])
+        key = (e["text"].lower(), e["label"].lower())
         if key not in seen:
             seen.add(key)
             unique_entities.append(e)
@@ -66,19 +90,16 @@ def process_folder(input_folder, output_folder):
             filepath = os.path.join(input_folder, filename)
             with open(filepath, "r", encoding="utf-8") as f:
                 text = f.read()
-            print(f"\n📄 Processing: {filename}")
             entities = extract_entities(text, entity_types)
             deduped = deduplicate_entities(entities)
-            for e in deduped:
-                print(f" → {e['text']} ({e['label']}) - Score: {e['score']}")
             output_filename = os.path.splitext(filename)[0] + ".json"
             output_path = os.path.join(output_folder, output_filename)
             with open(output_path, "w", encoding="utf-8") as out_file:
                 json.dump(deduped, out_file, indent=2, ensure_ascii=False)
-            print(f"✅ Saved: {output_filename}")
+            print(f"✅ Processed: {filename} → {output_filename}")
 
-# Main runner
+# Entry point
 if __name__ == "__main__":
-    input_folder = r"/home/ko19678/NER_gliner/New folder"
-    output_folder = r"/home/ko19678/NER_gliner/New folder"
+    input_folder = r"/home/ko19678/NER_gliner/New folder"     # Input text files
+    output_folder = r"/home/ko19678/NER_gliner/New folder"    # Output JSON files
     process_folder(input_folder, output_folder)
