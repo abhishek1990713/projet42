@@ -1,21 +1,23 @@
 
 
-
-         import re
+import os
+import re
 import json
 from gliner import GLINER
 
 # Load GLiNER model
-model_path = r"/home/ko19678/NER_gliner/model_gliner/glinerv2.5-pytorch-default-v1/gliner_model_v2.5"
+model_path = "/home/ko19678/NER_gliner/model_gliner/glinerv2.5-pytorch-default-v1/gliner_model_v2.5"
 model = GLINER.from_pretrained(model_path)
 
 # Define entity types
 entity_types = [
-    "person", "organization", "location", "gpe", "company", "address", "product",
-    "bank", "country", "state", "website", "email", "BIC_code/Swift_code", "limited"
+    "person", "organization", "location", "gpe", "company", "address",
+    "product", "bank", "country", "state", "website", "email", "BIC_code/Swift_code"
 ]
 
-CONFIDENCE_THRESHOLD = 0.75
+CONFIDENCE_THRESHOLD = 0.6
+
+# Chunk text for processing
 
 def chunk_text_with_overlap(text, max_words=250, overlap=50):
     words = text.split()
@@ -27,99 +29,98 @@ def chunk_text_with_overlap(text, max_words=250, overlap=50):
         i += max_words - overlap
     return chunks
 
-def extract_gliner_entities(text, entity_types, threshold=0.75):
+# Predict entities using GLiNER
+
+def extract_gliner_entities(text, entity_types, threshold=0.6):
     chunks = chunk_text_with_overlap(text)
     all_entities = []
     for chunk in chunks:
         entities = model.predict_entities(chunk, entity_types)
         for e in entities:
-            score = round(e.get("score", 1.0), 3)
-            if score >= threshold:
-                all_entities.append({
-                    "text": e["text"].strip(),
-                    "label": e["label"],
-                    "score": score
-                })
+            if e.get("score", 1.0) >= threshold:
+                all_entities.append(e)
     return all_entities
 
+# Regex-based entity extraction
+
 def extract_regex_entities(text):
-    patterns = {
-        "email": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
-        "phone": r"(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?){1,3}\d{3,4}",
-        "date": r"\b(?:\d{1,2}[/-])?(?:\d{1,2}[/-])?\d{2,4}\b",
-        "invoice": r"\b(?:INV|Invoice|Bill)[-\s]?\d{3,10}\b",
-        "website": r"https?://[^\s]+|www\.[^\s]+",
-        "swift_code": r"\b[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?\b"
-    }
+    entities = []
+    email_pattern = r"[\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,}"
+    email_matches = re.findall(email_pattern, text)
+    for email in email_matches:
+        entities.append({"text": email, "label": "email", "score": 1.0})
+    return entities, email_matches
 
-    found_entities = []
-    emails_found = []
-
-    for label, pattern in patterns.items():
-        matches = re.findall(pattern, text)
-        for match in matches:
-            found_entities.append({
-                "text": match,
-                "label": label,
-                "score": 1.0
-            })
-            if label == "email":
-                emails_found.append(match)
-    return found_entities, emails_found
+# Deduplicate by text and label
 
 def deduplicate_entities(entities):
     seen = set()
     unique = []
     for e in entities:
-        key = (e["text"].lower(), e["label"])
+        key = (e["text"].strip().lower(), e["label"])
         if key not in seen:
             seen.add(key)
-            unique.append(e)
+            unique.append({
+                "text": e["text"].strip(),
+                "label": e["label"],
+                "score": round(e.get("score", 1.0), 3)
+            })
     return unique
+
+# Extract display name and email pair
+
+def extract_name_email_pairs(text):
+    pattern = r'([\w\s,\.\"\']+)<([\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,})>'
+    matches = re.findall(pattern, text)
+    return [(name.replace(',', '').strip().strip('"'), email) for name, email in matches]
+
+# Classify extracted names using GLiNER
+
+def classify_names_with_gliner(names):
+    results = []
+    for name in names:
+        entities = model.predict_entities(name, ["person"])
+        for e in entities:
+            if e.get("score", 1.0) >= CONFIDENCE_THRESHOLD:
+                results.append(e)
+    return results
+
+# Extract names from emails (e.g., john.doe@example.com -> John Doe)
 
 def extract_names_from_emails(email_list):
     names = []
     for email in email_list:
-        local_part = email.split('@')[0]
-        name = re.sub(r'[\._\-]+', ' ', local_part).strip()
-        if name:
-            names.append(name)
+        prefix = email.split('@')[0]
+        clean = re.sub(r'[._-]', ' ', prefix).title()
+        names.append(clean)
     return names
 
-def classify_names_with_gliner(names):
-    result = []
-    for name in names:
-        entities = model.predict_entities(name, entity_types)
-        for e in entities:
-            score = round(e.get("score", 1.0), 3)
-            if score >= CONFIDENCE_THRESHOLD:
-                result.append({
-                    "text": e["text"].strip(),
-                    "label": e["label"],
-                    "score": score
-                })
-    return result
+# Process a single text input
 
 def process_text(text):
     gliner_entities = extract_gliner_entities(text, entity_types, threshold=CONFIDENCE_THRESHOLD)
     regex_entities, email_list = extract_regex_entities(text)
 
-    # Extract names from emails and classify them
-    email_names = extract_names_from_emails(email_list)
-    email_name_entities = classify_names_with_gliner(email_names)
+    # Extract names from patterns like: John Doe <john.doe@example.com>
+    name_email_pairs = extract_name_email_pairs(text)
+    display_names = [name for name, _ in name_email_pairs]
 
-    combined = gliner_entities + regex_entities + email_name_entities
-    results = deduplicate_entities(combined)
-    print(json.dumps(results, indent=2, ensure_ascii=False))
-    return results
+    # Classify display names and names from email prefix
+    display_name_entities = classify_names_with_gliner(display_names)
+    email_name_entities = classify_names_with_gliner(extract_names_from_emails(email_list))
+
+    all = gliner_entities + regex_entities + display_name_entities + email_name_entities
+    deduped = deduplicate_entities(all)
+
+    print(json.dumps(deduped, indent=2, ensure_ascii=False))
+    return deduped
 
 # Example usage
 if __name__ == "__main__":
     text = """
-    John Doe <john.doe@example.com> is the CTO of FutureTech Ltd.
-    The invoice number is INV-87654321 dated 12/04/2023 for $2,345.67.
-    Visit our website at www.futuretech.com or call +1-800-555-1234.
-    Swift Code: CHASUS33XXX
+    Please contact Dooling, Grayson <grayson.dooling@citi.com> or visit www.citi.com.
+    This invoice is from CitiBank Limited and the amount is $2,300.00.
     """
     process_text(text)
+
        
