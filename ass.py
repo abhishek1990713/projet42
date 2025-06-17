@@ -1,64 +1,29 @@
 
-def is_valid_email(text):
+
+def post_Screening(entities, text, ancillary_entities, ocr_results, config, logger):
     """
-    Check if the email address is valid using regex.
+    Final post-processing step: filters entities by context and validates extracted domain/email entities.
+    Only valid emails are included in the final output.
     """
-    email_regex = r'^[\w\.-]+@[\w\.-]+\.\w{2,}$'
-    return re.match(email_regex, text)
+    # Step 1: Contextual filtering
+    filtered_entities = filter_entities(text, entities, config, logger)
 
+    # Step 2: Extract domain/email entities using regex
+    domain_entities, _ = extract_regex_entities(text)
 
-def extract_urls(text):
-    """
-    Extract full URLs (http/https).
-    """
-    url_pattern = r'https?://[^\s]+'
-    return re.findall(url_pattern, text)
+    # Step 3: Merge all entities
+    combined_entities = filtered_entities + domain_entities
 
+    # Step 4: Apply post-filtering (e.g., remove invalid emails)
+    final_entities = []
+    for ent in combined_entities:
+        label = ent.get(LABEL)
+        value = ent.get(TEXT)
 
-def extract_regex_entities(text):
-    """
-    Extract valid emails (from text and name-email pairs), URLs, and websites.
-    Returns a list of entity dictionaries and email list.
-    """
-    entities = []
+        if label == "email" and not is_valid_email(value):
+            logger.info(f"Skipping invalid email in final entities: {value}")
+            continue
 
-    email_matches = extract_emails(text)
-    name_email_pairs = extract_name_email_pairs(text)
-    url_matches = extract_urls(text)
-    website_matches = extract_websites(text)
+        final_entities.append(ent)
 
-    name_email_addresses = [email for _, email in name_email_pairs if is_valid_email(email)]
-    remaining_emails = [e for e in email_matches if is_valid_email(e) and e not in name_email_addresses]
-
-    for name, email in name_email_pairs:
-        if is_valid_email(email):
-            entities.append({
-                TEXT: email,
-                LABEL: "email",
-                "name": name.strip(),
-                "score": 1.0
-            })
-
-    for email in remaining_emails:
-        entities.append({
-            TEXT: email,
-            LABEL: "email",
-            "score": 1.0
-        })
-
-    for url in url_matches:
-        entities.append({
-            TEXT: url,
-            LABEL: "URL",
-            "score": 1.0
-        })
-
-    for website in website_matches:
-        entities.append({
-            TEXT: website,
-            LABEL: "website",
-            "score": 1.0
-        })
-
-    return entities, email_matches
-
+    return final_entities
