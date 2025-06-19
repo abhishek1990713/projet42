@@ -1,7 +1,10 @@
 def Extract_website_and_email(text, config, ocr_results, logger):
     """
     Extract only emails, websites, and URLs from OCR blocks using regex.
-    Return OCR blocks with 'label' key where applicable.
+    For each match, add:
+      - 'label' (email / website / URL)
+      - 'start_index' (start of match in block text)
+      - 'end_index' (end of match in block text)
     """
     try:
         extracted_blocks = []
@@ -11,16 +14,26 @@ def Extract_website_and_email(text, config, ocr_results, logger):
             if not block_text:
                 continue
 
-            # Extract entities from this block's text
+            # Extract regex entities from this block's text
             entities, _ = extract_regex_entities(block_text)
 
             for entity in entities:
-                if entity.get(TEXT) == block_text and entity.get(LABEL) in ["email", "website", "URL"]:
-                    block["label"] = entity.get(LABEL)
-                    extracted_blocks.append(block)
-                    break  # No need to check further once matched
+                match_text = entity.get(TEXT)
+                label = entity.get(LABEL)
 
-        logger.info(f"Found {len(extracted_blocks)} email/URL/website blocks from OCR.")
+                if label in ["email", "website", "URL"] and match_text in block_text:
+                    start_index = block_text.find(match_text)
+                    end_index = start_index + len(match_text)
+
+                    block_with_label = dict(block)  # Make a copy to avoid mutating original
+                    block_with_label["label"] = label
+                    block_with_label["start_index"] = start_index
+                    block_with_label["end_index"] = end_index
+
+                    extracted_blocks.append(block_with_label)
+                    break  # Only one match per block
+
+        logger.info(f"Extracted {len(extracted_blocks)} email/website/URL entities with indices from OCR.")
         return extracted_blocks
 
     except Exception as e:
