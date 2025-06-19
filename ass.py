@@ -1,9 +1,10 @@
-
-
 def extract_regex_entities(text, ocr_results=None):
     """
-    Extract valid emails, URLs, and websites from text and ocr_results.
-    Attach spatial metadata from OCR blocks if available.
+    Extract valid emails, URLs, and websites.
+    If OCR blocks are provided, attach spatial metadata dynamically.
+    Returns:
+        entities: List of entity dicts with full metadata
+        email_matches: List of raw email strings
     """
     entities = []
 
@@ -15,64 +16,72 @@ def extract_regex_entities(text, ocr_results=None):
     name_email_addresses = [email for _, email in name_email_pairs if is_valid_email(email)]
     remaining_emails = [e for e in email_matches if is_valid_email(e) and e not in name_email_addresses]
 
-    def find_coordinates(matched_text):
+    def find_block_data(match_text):
+        """
+        Find corresponding OCR block data for a given matched text.
+        """
         if not ocr_results:
-            return None
+            return {}
         for block in ocr_results:
-            if matched_text in block.get("text", ""):
+            block_text = block.get("text", "")
+            if match_text in block_text:
                 return {
+                    "page": block.get("page"),
                     "x": block.get("x"),
                     "y": block.get("y"),
                     "width": block.get("width"),
                     "height": block.get("height"),
-                    "page": block.get("page"),
-                    "start_index": text.find(matched_text),
-                    "end_index": text.find(matched_text) + len(matched_text),
-                    "Coordinates": []
+                    "start_index": text.find(match_text),
+                    "end_index": text.find(match_text) + len(match_text),
+                    "Coordinates": block.get("Coordinates", [])
                 }
-        return None
+        return {
+            "page": None,
+            "x": None,
+            "y": None,
+            "width": None,
+            "height": None,
+            "start_index": text.find(match_text),
+            "end_index": text.find(match_text) + len(match_text),
+            "Coordinates": []
+        }
 
+    # Handle name-email pairs
     for name, email in name_email_pairs:
         if is_valid_email(email):
-            base = {
+            entity = {
                 TEXT: email,
                 LABEL: "email",
                 "name": name.strip()
             }
-            coord = find_coordinates(email)
-            if coord:
-                base.update(coord)
-            entities.append(base)
+            entity.update(find_block_data(email))
+            entities.append(entity)
 
+    # Handle remaining emails
     for email in remaining_emails:
-        base = {
+        entity = {
             TEXT: email,
             LABEL: "email"
         }
-        coord = find_coordinates(email)
-        if coord:
-            base.update(coord)
-        entities.append(base)
+        entity.update(find_block_data(email))
+        entities.append(entity)
 
+    # Handle URLs
     for url in url_matches:
-        base = {
+        entity = {
             TEXT: url,
             LABEL: "URL"
         }
-        coord = find_coordinates(url)
-        if coord:
-            base.update(coord)
-        entities.append(base)
+        entity.update(find_block_data(url))
+        entities.append(entity)
 
+    # Handle websites
     for website in website_matches:
-        base = {
+        entity = {
             TEXT: website,
             LABEL: "website"
         }
-        coord = find_coordinates(website)
-        if coord:
-            base.update(coord)
-        entities.append(base)
+        entity.update(find_block_data(website))
+        entities.append(entity)
 
     return entities, email_matches
-
