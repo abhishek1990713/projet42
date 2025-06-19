@@ -1,35 +1,78 @@
-def post_Screening(entities, text, ancillary_entities, ocr_results, config, logger):
+
+
+def extract_regex_entities(text, ocr_results=None):
     """
-    Final post-processing to combine context-filtered and regex-based domain entities,
-    with proper validation for email, website, and URL.
+    Extract valid emails, URLs, and websites from text and ocr_results.
+    Attach spatial metadata from OCR blocks if available.
     """
-    # Step 1: Context-aware filtering
-    filtered_entities = filter_entities(text, entities, config, logger)
+    entities = []
 
-    # Step 2: Regex-based entity extraction
-    domain_entities, _ = extract_regex_entities(text)
+    email_matches = extract_emails(text)
+    name_email_pairs = extract_name_email_pairs(text)
+    url_matches = extract_urls(text)
+    website_matches = extract_websites(text)
 
-    # Step 3: Combine all entities
-    combined_entities = filtered_entities + domain_entities
+    name_email_addresses = [email for _, email in name_email_pairs if is_valid_email(email)]
+    remaining_emails = [e for e in email_matches if is_valid_email(e) and e not in name_email_addresses]
 
-    # Step 4: Final validation for email, URL, and website
-    final_entities = []
-    for ent in combined_entities:
-        label = ent.get(LABEL)
-        value = ent.get(TEXT)
+    def find_coordinates(matched_text):
+        if not ocr_results:
+            return None
+        for block in ocr_results:
+            if matched_text in block.get("text", ""):
+                return {
+                    "x": block.get("x"),
+                    "y": block.get("y"),
+                    "width": block.get("width"),
+                    "height": block.get("height"),
+                    "page": block.get("page"),
+                    "start_index": text.find(matched_text),
+                    "end_index": text.find(matched_text) + len(matched_text),
+                    "Coordinates": []
+                }
+        return None
 
-        if label == "email" and not is_valid_email(value):
-            logger.info(f"Skipping invalid email: {value}")
-            continue
+    for name, email in name_email_pairs:
+        if is_valid_email(email):
+            base = {
+                TEXT: email,
+                LABEL: "email",
+                "name": name.strip()
+            }
+            coord = find_coordinates(email)
+            if coord:
+                base.update(coord)
+            entities.append(base)
 
-        if label == "website" and not re.match(r'^(www\.)[^\s]+\.[a-zA-Z]{2,}$', value):
-            logger.info(f"Skipping invalid website: {value}")
-            continue
+    for email in remaining_emails:
+        base = {
+            TEXT: email,
+            LABEL: "email"
+        }
+        coord = find_coordinates(email)
+        if coord:
+            base.update(coord)
+        entities.append(base)
 
-        if label == "URL" and not re.match(r'^https?://[^\s]+$', value):
-            logger.info(f"Skipping invalid URL: {value}")
-            continue
+    for url in url_matches:
+        base = {
+            TEXT: url,
+            LABEL: "URL"
+        }
+        coord = find_coordinates(url)
+        if coord:
+            base.update(coord)
+        entities.append(base)
 
-        final_entities.append(ent)
+    for website in website_matches:
+        base = {
+            TEXT: website,
+            LABEL: "website"
+        }
+        coord = find_coordinates(website)
+        if coord:
+            base.update(coord)
+        entities.append(base)
 
-    return final_entities
+    return entities, email_matches
+
