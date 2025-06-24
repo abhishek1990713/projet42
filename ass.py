@@ -1,63 +1,54 @@
-def Extract_website_and_email(text, config, ocr_results, logger):
+import os
+import spacy
+from spacy.tokens import Doc
+import time
+from multiprocessing import Pool, set_start_method
+
+from pre_post_processing import *
+from constants import *
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+def extract_chunks(text, chunk_size=10000, overlap_size=1000):
     """
-    Extract emails, websites, and URLs from OCR block text using regex.
-    For each match, append:
-      - 'label': type of entity (email / website / URL)
-      - 'start_index': character index of match start in block text
-      - 'end_index': character index of match end in block text
+    Splits the input text into overlapping chunks.
     """
-    try:
-        extracted_blocks = []
+    chunks = []
+    for i in range(0, len(text), chunk_size - overlap_size):
+        start = i
+        end = min(i + chunk_size, len(text))
+        chunks.append(text[start:end])
+        if end == len(text):
+            break
+    return chunks
 
-        email_pattern = r"[\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,}"
-        website_pattern = r'\b(?:www\.)[^\s]+\.[a-zA-Z]{2,}\b'
-        url_pattern = r'https?://[^\s]+'
 
-        for block in ocr_results:
-            block_text = block.get("text", "").strip()
-            if not block_text:
-                continue
+def preprocess_chunk(chunk):
+    """
+    Dummy preprocessing in parallel. You can expand this if needed.
+    """
+    return chunk  # You could add cleanup, lowercasing, regex etc.
 
-            # Email
-            for match in re.finditer(email_pattern, block_text):
-                email = match.group()
-                if is_valid_email(email):
-                    block_with_label = dict(block)
-                    block_with_label.update({
-                        "label": "email",
-                        "start_index": match.start(),
-                        "end_index": match.end()
-                    })
-                    extracted_blocks.append(block_with_label)
-                    break  # one match per block
 
-            # Website
-            for match in re.finditer(website_pattern, block_text):
-                website = match.group()
-                block_with_label = dict(block)
-                block_with_label.update({
-                    "label": "website",
-                    "start_index": match.start(),
-                    "end_index": match.end()
-                })
-                extracted_blocks.append(block_with_label)
-                break
+def process_in_chunks_fast(text, spacy_model_path, config, chunk_size=10000, overlap_size=1000):
+    """
+    Fast version that parallelizes preprocessing and processes all chunks with a single SpaCy call.
+    """
+    # Step 1: Chunk the text
+    chunks = extract_chunks(text, chunk_size, overlap_size)
+    print(f"Total chunks: {len(chunks)}")
 
-            # URL
-            for match in re.finditer(url_pattern, block_text):
-                url = match.group()
-                block_with_label = dict(block)
-                block_with_label.update({
-                    "label": "URL",
-                    "start_index": match.start(),
-                    "end_index": match.end()
-                })
-                extracted_blocks.append(block_with_label)
-                break
+    # Step 2: Preprocess in parallel
+    set_start_method("spawn", force=True)
+    with Pool() as pool:
+        preprocessed_chunks = pool.map(preprocess_chunk, chunks)
 
-        logger.info(f"Extracted {len(extracted_blocks)} labeled OCR blocks with index positions.")
-        return extracted_blocks
+    # Step 3: Concatenate all preprocessed chunks
+    final_text = "\n".join(preprocessed_chunks)
 
-    except Exception as e:
-        logger.error(f"Error in Extract_website_and_email: {str(e)}")
-        return []
+    # Step 4: Run SpaCy NLP on combined text using single shared Vocab
+    nlp = spacy.load(spacy_model_path)
+    add_dynamic_patterns(nlp, config)
+
+    doc = nlp(final_text)
+    return doc
