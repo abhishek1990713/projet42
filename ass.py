@@ -1,86 +1,54 @@
 
-import os
-import spacy
-from spacy.tokens import Doc
-import time
-from constants import *  # your constant strings/config
-from pre_post_processing import add_dynamic_patterns  # assumed available
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-
-def create_chunks(text, chunk_size=10000, overlap_size=1000):
+def Extract_website_and_email(text, config, ocr_results, logger):
     """
-    Splits the input text into overlapping chunks.
+    Extract emails, URLs, and websites from the full text (including OCR).
+    Adds label, start_index, and end_index (w.r.t. full text) to OCR blocks that match.
+
+    Returns:
+        List of OCR blocks with 'label', 'start_index', 'end_index'.
     """
-    chunks = []
-    for i in range(0, len(text), chunk_size - overlap_size):
-        start = i
-        end = min(i + chunk_size, len(text))
-        chunk = text[start:end]
-        chunks.append(chunk)
-        if end == len(text):
-            break
-    return chunks
+    try:
+        # Merge OCR into full text if not already present
+        if ocr_results:
+            ocr_text = " ".join([block.get("text", "") for block in ocr_results])
+            text += " " + ocr_text
 
+        # Extract entities from full text
+        entities, _ = extract_regex_entities(text)
+        valid_labels = {"email", "website", "URL"}
+        filtered_entities = [ent for ent in entities if ent.get(LABEL) in valid_labels]
 
-def process_in_chunks(text, spacy_model_path, config, chunk_size=10000, overlap_size=1000):
-    """
-    Safely processes text in chunks using a shared SpaCy NLP model.
-    Avoids multiprocessing to ensure Vocab consistency.
-    """
-    start_time = time.time()
-    print("[INFO] Loading SpaCy model...")
-    nlp = spacy.load(spacy_model_path)
-    add_dynamic_patterns(nlp, config)
+        labeled_blocks = []
 
-    print("[INFO] Creating chunks...")
-    chunks = create_chunks(text, chunk_size, overlap_size)
-    print(f"[INFO] Total chunks created: {len(chunks)}")
+        for ent in filtered_entities:
+            value = ent.get(TEXT)
+            label = ent.get(LABEL)
 
-    docs = []
-    for idx, chunk in enumerate(chunks):
-        print(f"[INFO] Processing chunk {idx + 1}/{len(chunks)}")
-        doc = nlp(chunk)
-        docs.append(doc)
+            # Use regex search to find exact match and index
+            match = re.search(re.escape(value), text)
+            if not match:
+                continue  # skip if not found
 
-    merged_doc = Doc.from_docs(docs)
-    print(f"[INFO] Sequential processing complete in {time.time() - start_time:.2f} seconds.")
-    return merged_doc
+            start_idx = match.start()
+            end_idx = match.end()
 
+            # Now map it to one of the OCR blocks
+            for block in ocr_results:
+                block_text = block.get("text", "").strip()
+                if not block_text or value not in block_text:
+                    continue
 
-def fast_parallel_processing(text, spacy_model_path, config, chunk_size=10000, overlap_size=1000):
-    """
-    Fast version using SpaCy's built-in `nlp.pipe` with multiprocessing.
-    Suitable for large texts; still safe since SpaCy manages Vocab internally.
-    """
-    start_time = time.time()
-    print("[INFO] Loading SpaCy model with multiprocessing...")
-    nlp = spacy.load(spacy_model_path)
-    add_dynamic_patterns(nlp, config)
+                block_with_label = dict(block)
+                block_with_label["label"] = label
+                block_with_label["start_index"] = start_idx
+                block_with_label["end_index"] = end_idx
 
-    chunks = create_chunks(text, chunk_size, overlap_size)
-    print(f"[INFO] Total chunks: {len(chunks)}")
+                labeled_blocks.append(block_with_label)
+                break  # only one block per match
 
-    print("[INFO] Processing in parallel using nlp.pipe() ...")
-    docs = list(nlp.pipe(chunks, batch_size=4, n_process=2))  # Adjust based on your CPU
+        logger.info(f"Extracted {len(labeled_blocks)} labeled entities from OCR blocks.")
+        return labeled_blocks
 
-    merged_doc = Doc.from_docs(docs)
-    print(f"[INFO] Parallel processing complete in {time.time() - start_time:.2f} seconds.")
-    return merged_doc
-
-
-# Example usage
-if __name__ == "__main__":
-    # Dummy setup – replace with real input
-    test_text = "This is a long text. " * 10000  # Simulated large text
-    model_path = "en_core_web_sm"  # Replace with your SpaCy model path
-    config = {}  # Add your dynamic pattern config
-
-    # Choose mode:
-    # merged_doc = process_in_chunks(test_text, model_path, config)  # Safe mode
-    merged_doc = fast_parallel_processing(test_text, model_path, config)  # Fast mode
-
-    # Example output
-    for ent in merged_doc.ents:
-        print(f"{ent.text} ({ent.label_})")
+    except Exception as e:
+        logger.error(f"Error in Extract_website_and_email: {str(e)}")
+        return []
