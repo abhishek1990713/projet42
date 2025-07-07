@@ -1,21 +1,34 @@
+def extract_entities(text, entity_types, model, logger):
+    chunk_size = 250
+    overlap_size = 50
 
-def remove_overlapping_entities(ner_details):
-    # Sort: start first, then prefer longer spans
-    sorted_ner = sorted(ner_details, key=lambda x: (x[START_INDEX], -(x[END_INDEX] - x[START_INDEX])))
-    non_overlapping = []
+    try:
+        chunks = chunk_text_with_overlap(text, chunk_size, overlap_size)
+        all_entities = []
 
-    for current in sorted_ner:
-        is_nested = False
-        for existing in non_overlapping:
-            # Check if current is fully contained in existing
-            if current[START_INDEX] >= existing[START_INDEX] and current[END_INDEX] <= existing[END_INDEX]:
-                is_nested = True
-                print(f"❌ Removing nested entity: {current[ENTITY_TEXT]} ({current[START_INDEX]}-{current[END_INDEX]}) "
-                      f"inside {existing[ENTITY_TEXT]} ({existing[START_INDEX]}-{existing[END_INDEX]})")
-                break
+        words = text.split()
 
-        if not is_nested:
-            non_overlapping.append(current)
+        for chunk in chunks:
+            chunk_text = chunk["chunk_text"]
+            offset = chunk["start_word_index"]
 
-    print(f"\n✅ Final count after removing nested overlaps: {len(non_overlapping)}")
-    return non_overlapping
+            entities = model.predict_entities(chunk_text, entity_types)
+
+            for ent in entities:
+                # Adjust the entity's start/end indices relative to full text
+                ent["start"] += offset
+                ent["end"] += offset
+
+                # Optional: validate extracted text matches original
+                reconstructed_text = ' '.join(words[ent["start"]:ent["end"]])
+                if ent["text"] != reconstructed_text:
+                    logger.warning(f"Text mismatch: Entity='{ent['text']}' vs Reconstructed='{reconstructed_text}'")
+
+            all_entities.extend(entities)
+            print("\nChunk processed, entities found:", len(entities))
+
+        return all_entities
+
+    except Exception as e:
+        logger.error(f"Error extracting entities: {e}")
+        return []
