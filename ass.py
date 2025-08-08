@@ -1,17 +1,32 @@
-
 import re
 
-def is_continuation(current_text):
-    """
-    Returns True if the current text starts a URL (i.e., starts with http or https).
-    """
-    current_text = current_text.strip().lower()
-    return current_text.startswith("http://") or current_text.startswith("https://")
+# Constants
+ENTITY_TEXT = 'text'
 
-def merge_ocr_text(data, config, logger):
+# Dummy preprocess function (replace with your actual logic if needed)
+def preprocess(text, config=None, logger=None):
+    return text.strip()
+
+# Helper to check if a text is a potential URL start or continuation
+def is_continuation(text):
     """
-    Merges OCR segments that appear to be parts of the same URL or logical string.
+    Returns True if the text likely starts or continues a URL.
     """
+    text = text.strip().lower()
+    return (
+        text.startswith("http://") or
+        text.startswith("https://") or
+        bool(re.search(r'\.(com|org|net|gov|edu|co|jp|in|us|de|uk)', text))
+    )
+
+# Main function to merge segments
+def merge_ocr_text(data, config=None, logger=None):
+    """
+    Merges OCR segments that form a URL or logical string split across multiple segments.
+    """
+    # Optional: sort for proper sequence
+    data = sorted(data, key=lambda d: (int(d.get("page", 1)), d.get("y", 0), d.get("x", 0)))
+
     merged_results = []
     i = 0
 
@@ -25,31 +40,52 @@ def merge_ocr_text(data, config, logger):
         page = current.get("page", 1)
         merged_text = current_text
 
-        # Check if current text indicates a URL or email continuation
-        if (is_continuation(current_text) or re.search(r'\.(com|org|net|gov|edu|co|jp|in|us|de|uk)', current_text)) and i + 1 < len(data):
-            next_entry = data[i + 1]
-            next_text = preprocess(next_entry[ENTITY_TEXT], config, logger)
+        end_x = x + width
+        end_y = y + height
 
-            print("\nnext_text:", next_text, "current_text:", current_text)
+        # If it looks like a start/continuation, try merging
+        if is_continuation(current_text):
+            j = i + 1
+            while j < len(data):
+                next_entry = data[j]
+                next_text = preprocess(next_entry[ENTITY_TEXT], config, logger)
 
-            # Merge text and update bounding box
-            merged_text += next_text
-            print("\nmerged_text:", merged_text)
+                # Merge unless it's a very short token (like isolated 'I' or 'X')
+                if not re.match(r'^\w{1,2}$', next_text):
+                    merged_text += next_text
+                    end_x = max(end_x, next_entry.get("x", 0) + next_entry.get("width", 0))
+                    end_y = max(end_y, next_entry.get("y", 0) + next_entry.get("height", 0))
+                    j += 1
+                else:
+                    break
 
-            width = (next_entry["x"] + next_entry["width"]) - x
-            height = max(height, next_entry["height"])
-            i += 1  # Skip the next one since it was merged
+                # Stop if merged text looks like a full URL ending
+                if re.search(r'\.(com|org|net|gov|edu|co|jp|in|us|de|uk)(\/|$)', merged_text):
+                    break
 
-        # Append merged or individual entry
-        merged_results.append({
-            ENTITY_TEXT: merged_text,
-            "x": x,
-            "y": y,
-            "width": width,
-            "height": height,
-            "page": page
-        })
+            width = end_x - x
+            height = end_y - y
 
-        i += 1
+            merged_results.append({
+                ENTITY_TEXT: merged_text,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "page": page
+            })
+
+            i = j  # skip merged ones
+        else:
+            merged_results.append({
+                ENTITY_TEXT: current_text,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "page": page
+            })
+            i += 1
 
     return merged_results
+
