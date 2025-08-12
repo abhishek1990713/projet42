@@ -1,29 +1,18 @@
 import re
 
-def find_port_code_and_name(text):
+def find_port_codes(text):
     """
-    Finds port code (UN/LOCODE) and port name in the text.
-    Handles formats like:
-    INNSA - Nhava Sheva
-    USNYC: New York
-    JPTYO Tokyo
+    Finds port codes in the format:
+    2 uppercase letters (country) + 3 uppercase letters/numbers (location).
+    Example: INNSA, USNYC, JPTYO, INN01
     """
-    # \b([A-Z]{2}[A-Z0-9]{3})\b → Port code (2 letters + 3 letters/numbers)
-    # [\s\-:]+ → Separator (space, dash, or colon)
-    # ([A-Za-z][A-Za-z\s]+) → Port name (starts with a letter, can have spaces)
-    pattern = r'\b([A-Z]{2}[A-Z0-9]{3})\b[\s\-:]+([A-Za-z][A-Za-z\s]+)'
-    
-    matches = re.findall(pattern, text)
-    return matches
+    pattern = r'\b[A-Z]{2}[A-Z0-9]{3}\b'
+    return re.findall(pattern, text)
 
 # Example usage
 sample_text = """
-Shipment leaves from INNSA - Nhava Sheva and goes to USNYC: New York.
-Final stop JPTYO Tokyo.
+Shipment from INNSA to USNYC via JPTYO.
+Also check INN01 and FRPAR.
 """
-
-results = find_port_code_and_name(sample_text)
-for code, name in results:
-    print(f"Port Code: {code}, Port Name: {name.strip()}")
-
+print(find_port_codes(sample_text))
 
