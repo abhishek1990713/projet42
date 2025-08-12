@@ -1,18 +1,10 @@
-import re
+import spacy
+from spacy.matcher import Matcher
 
-def find_port_codes(text):
-    """
-    Finds port codes in the format:
-    2 uppercase letters (country) + 3 uppercase letters/numbers (location).
-    Example: INNSA, USNYC, JPTYO, INN01
-    """
-    pattern = r'\b[A-Z]{2}[A-Z0-9]{3}\b'
-    return re.findall(pattern, text)
+nlp = spacy.blank("en")
+matcher = Matcher(nlp.vocab)
+matcher.add("PORT_CODE", [[{"TEXT": {"REGEX": "^[A-Z]{2}[A-Z0-9]{3}$"}}]])
 
-# Example usage
-sample_text = """
-Shipment from INNSA to USNYC via JPTYO.
-Also check INN01 and FRPAR.
-"""
-print(find_port_codes(sample_text))
-
+doc = nlp("Shipment from INNSA to USNYC")
+for match_id, start, end in matcher(doc):
+    print("Port code:", doc[start:end].text)
