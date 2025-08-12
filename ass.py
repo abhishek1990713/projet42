@@ -1,27 +1,29 @@
 import re
-import pycountry  # pip install pycountry
+import pandas as pd
+import pycountry
 
-# Create a set of all valid ISO country codes
+# Load UN/LOCODE CSV (download from UNECE site)
+# File should have columns: Country, Location, Name
+df = pd.read_csv("unlocode.csv")
+df['LOCODE'] = df['Country'] + df['Location']
+VALID_PORT_CODES = set(df['LOCODE'])
+
+# Set of valid country codes
 COUNTRY_CODES = {country.alpha_2 for country in pycountry.countries}
 
-def find_port_codes(text):
-    """
-    Finds port codes where:
-    - First 2 characters are valid ISO country codes.
-    - Next 3 characters are uppercase letters or numbers.
-    """
+def find_real_port_codes(text):
     pattern = r'\b([A-Z]{2})([A-Z0-9]{3})\b'
     matches = re.findall(pattern, text)
 
-    valid_codes = []
+    valid = []
     for country, location in matches:
-        if country in COUNTRY_CODES:
-            valid_codes.append(country + location)
-    return valid_codes
+        code = country + location
+        if country in COUNTRY_CODES and code in VALID_PORT_CODES:
+            valid.append(code)
+    return valid
 
-# Example usage
 sample_text = """
 Shipment from INNSA to USNYC via JPTYO.
-Also check INN01 and FRPAR. Random ABCDE should be ignored.
+Also check SABIC, MARKS, TOTAL.
 """
-print(find_port_codes(sample_text))
+print(find_real_port_codes(sample_text))
