@@ -1,147 +1,173 @@
-.env
-DB_HOST=sd-rami-kmat.nam.nsroot.net
-DB_PORT=1524
-DB_USERNAME=postgres_dev_179442
-DB_PASSWORD=ppdVEB9ACb
-DB_NAME=gssp_common
-DB_SESSION_ROLE=citi_pg_app_owner
+from fastapi import FastAPI, UploadFile, File, HTTPException
+import json
+import uvicorn
 
-dB.py
-# db.py
-import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
+from db import insert_feedback_to_db
+from setup_log import logger
 
-load_dotenv()
-
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT", 5432)
-DB_USERNAME = os.getenv("DB_USERNAME")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_NAME = os.getenv("DB_NAME")
-
-DATABASE_URL = (
-    f"postgresql+asyncpg://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
-
-engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-
-AsyncSessionLocal = sessionmaker(
-    bind=engine, expire_on_commit=False, class_=AsyncSession
-)
-
-Base = declarative_base()
+app = FastAPI(title="Feedback API", version="1.0")
 
 
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
+@app.post("/upload-json")
+async def upload_json(file: UploadFile = File(...)):
+    """
+    API endpoint to upload a JSON file and insert its content into PostgreSQL.
 
-model.py
-# models.py
-from sqlalchemy import Column, Integer, Text, JSON, TIMESTAMP, func
-from db import Base
+    Args:
+        file (UploadFile): JSON file uploaded by the user.
 
+    Returns:
+        dict: A success message on successful insert.
 
-class Feedback(Base):
-    __tablename__ = "feedback_json"
-
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Text, nullable=True)
-    consumer_id = Column(Text, nullable=True)
-    full_json = Column(JSON, nullable=False)
-    created_at = Column(TIMESTAMP, server_default=func.now())
-
-
-schema.py
-# schemas.py
-from pydantic import BaseModel
-from typing import Any, Optional
-
-
-class FeedbackIn(BaseModel):
-    x_application_id: Optional[str] = None
-    x_correlation_id: Optional[str] = None
-    payload: Any
-
-    class Config:
-        extra = "allow"
-
-
-class FeedbackOut(BaseModel):
-    id: int
-    application_id: Optional[str]
-    consumer_id: Optional[str]
-    full_json: Any
-
-    class Config:
-        orm_mode = True
-
-
-crud.py
-# crud.py
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from models import Feedback
-from schemas import FeedbackIn
-
-
-async def create_feedback(db: AsyncSession, feedback: FeedbackIn):
-    db_feedback = Feedback(
-        application_id=feedback.x_application_id,
-        consumer_id=feedback.x_correlation_id,
-        full_json=feedback.dict(),
-    )
-    db.add(db_feedback)
-    await db.commit()
-    await db.refresh(db_feedback)
-    return db_feedback
-
-
-async def get_feedbacks(db: AsyncSession, skip: int = 0, limit: int = 10):
-    result = await db.execute(select(Feedback).offset(skip).limit(limit))
-    return result.scalars().all()
-
-
-fast.py
-# fast.py
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from db import Base, engine, get_db
-from models import Feedback
-from schemas import FeedbackIn, FeedbackOut
-import crud
-
-app = FastAPI(title="GSSP Feedback API with ORM")
-
-
-@app.on_event("startup")
-async def on_startup():
-    async with engine.begin() as conn:
-        # Creates tables if they don’t exist
-        await conn.run_sync(Base.metadata.create_all)
-
-
-@app.post("/feedback/", response_model=FeedbackOut, status_code=201)
-async def create_feedback(feedback: FeedbackIn, db: AsyncSession = Depends(get_db)):
+    Raises:
+        HTTPException: If file is not JSON or database insert fails.
+    """
     try:
-        fb = await crud.create_feedback(db, feedback)
-        return fb
+        if not file.filename.endswith(".json"):
+            raise HTTPException(status_code=400, detail="Only JSON files are allowed")
+
+        # Read file content
+        content = await file.read()
+        data = json.loads(content)
+
+        # Extract required fields
+        application_id = data.get("x-application-id")
+        consumer_id = data.get("x-correlation-id")
+
+        if not application_id or not consumer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required fields: x-application-id or x-correlation-id"
+            )
+
+        # Insert into DB
+        insert_feedback_to_db(application_id, consumer_id, data)
+
+        return {"message": "Feedback JSON inserted successfully"}
+
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON file uploaded")
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/feedback/", response_model=list[FeedbackOut])
-async def list_feedbacks(skip: int = 0, limit: int = 10, db: AsyncSession = Depends(get_db)):
-    return await crud.get_feedbacks(db, skip=skip, limit=limit)
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+        logger.error(f"Error inserting feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("fast:app", host="0.0.0.0", port=8000, reload=True)
+    """
+    Entry point for running the FastAPI app directly with Python.
+    Runs Uvicorn server on host 0.0.0.0 and port 9000.
+    """
+    uvicorn.run("fast:app", host="0.0.0.0", port=9000, reload=True)
+
+
+import os
+import psycopg2
+import json
+from dotenv import load_dotenv
+from setup_log import logger
+
+# Load environment variables from .env file
+load_dotenv()
+
+
+def get_connection():
+    """
+    Establish a PostgreSQL connection using environment variables.
+
+    Returns:
+        psycopg2.extensions.connection: A PostgreSQL connection object.
+
+    Raises:
+        Exception: If connection to the database fails.
+    """
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            port=os.getenv("DB_PORT"),
+            user=os.getenv("DB_USERNAME"),
+            password=os.getenv("DB_PASSWORD"),
+            dbname=os.getenv("DB_NAME"),
+        )
+        logger.info("Database connection established successfully")
+
+        # Set DB session role
+        role = os.getenv("DB_SESSION_ROLE")
+        if role:
+            with conn.cursor() as cursor:
+                cursor.execute(f"SET ROLE {role};")
+            logger.info(f"Database role set to {role}")
+
+        return conn
+    except Exception as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        raise
+
+
+def insert_feedback_to_db(application_id: str, consumer_id: str, feedback_json: dict):
+    """
+    Insert feedback JSON into the feedback_json table in PostgreSQL.
+    If the table does not exist, create it first.
+
+    Args:
+        application_id (str): The application ID from feedback.
+        consumer_id (str): The consumer ID from feedback.
+        feedback_json (dict): The full feedback JSON.
+
+    Raises:
+        Exception: If insert fails.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS gssp_common.feedback_json (
+                id SERIAL PRIMARY KEY,
+                application_id TEXT,
+                consumer_id TEXT,
+                full_json JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        cursor.execute(
+            """
+            INSERT INTO gssp_common.feedback_json 
+            (application_id, consumer_id, full_json)
+            VALUES (%s, %s, %s);
+            """,
+            (
+                application_id,
+                consumer_id,
+                json.dumps(feedback_json),
+            )
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info("Feedback JSON inserted successfully")
+
+    except Exception as e:
+        logger.error(f"Error inserting feedback: {str(e)}")
+        raise
+
+
+
+from pydantic import BaseModel, Field
+from typing import Dict, Any
+
+
+class Feedback(BaseModel):
+    """
+    Pydantic model for validating feedback JSON structure.
+    - application_id: Application ID string
+    - consumer_id: Consumer ID string
+    - feedback: Full JSON payload (dict)
+    """
+    application_id: str = Field(..., description="Unique application identifier")
+    consumer_id: str = Field(..., description="Unique consumer identifier")
+    feedback: Dict[str, Any] = Field(..., description="Full JSON feedback payload")
+
