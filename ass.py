@@ -1,40 +1,26 @@
 
-import logging
-import sys
+import requests
 
-
-def setup_logger():
+def test_upload_json_file():
     """
-    Configure a global logger with console and file output.
-    Returns:
-        logging.Logger: Configured logger instance.
+    Test script to upload an existing JSON file to the FastAPI API.
     """
-    logger = logging.getLogger("feedback_app")
-    logger.setLevel(logging.DEBUG)
+    url = "http://127.0.0.1:9000/upload-json/"  # API endpoint
 
-    if logger.hasHandlers():
-        return logger
+    # Replace with your actual JSON file name
+    json_file_path = "input.json"
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
+    # Open and send JSON file
+    with open(json_file_path, "rb") as f:
+        files = {"file": (json_file_path, f, "application/json")}
+        response = requests.post(url, files=files)
 
-    # File handler
-    file_handler = logging.FileHandler("app.log", encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
-
-    # Formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s"
-    )
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    return logger
+    print("Status Code:", response.status_code)
+    try:
+        print("Response JSON:", response.json())
+    except Exception:
+        print("Raw Response:", response.text)
 
 
-# Global logger
-logger = setup_logger()
+if __name__ == "__main__":
+    test_upload_json_file()
