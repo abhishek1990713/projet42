@@ -1,19 +1,17 @@
-# schemas.py
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
+# models.py
+from sqlalchemy import Column, Integer, Text, JSON, TIMESTAMP, func
+from db import Base
 
-class FeedbackBase(BaseModel):
-    application_id: str
-    consumer_id: str
-    feedback_json: Dict[str, Any]
+class Feedback(Base):
+    """
+    ORM model for Feedback table inside gssp_common schema.
+    """
+    __tablename__ = "Feedback"
+    __table_args__ = {"schema": "gssp_common"}   # ✅ schema fixed
 
-class FeedbackCreate(FeedbackBase):
-    authorization_coin_id: str
-
-class FeedbackResponse(BaseModel):
-    success: bool
-    message: str
-    details: Optional[Dict[str, Any]] = None   # ✅ FIXED
-
-    class Config:
-        orm_mode = True
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Text, nullable=False)
+    consumer_id = Column(Text, nullable=False)
+    authorization_coin_id = Column(Text, nullable=False)
+    feedback_json = Column(JSON, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
