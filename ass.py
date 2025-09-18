@@ -1,192 +1,166 @@
-# utility.py
 
+# main.py
+from fastapi import FastAPI, Depends, Header, HTTPException
+from sqlalchemy.orm import Session
 import json
-import psycopg2
-import configparser
-from psycopg2 import sql, OperationalError
-from constants import (
-    APP_ID_KEY,
-    CONSUMER_ID_KEY,
-    SUCCESS_MSG,
-    MISSING_FIELDS_MSG,
-    CONFIG_FILE,
-)
+
+from db import Base, engine, get_db
+from models import Feedback
+from schemas import FeedbackResponse
+from constants import APP_ID_KEY, CONSUMER_ID_KEY, SUCCESS_MSG, MISSING_FIELDS_MSG
 from setup_log import setup_logger
 
-# -------------------- Logger --------------------
-try:
-    logger = setup_logger()
-except Exception:
-    logger = None
+logger = setup_logger()
 
-# -------------------- Load Config --------------------
-config = configparser.ConfigParser()
-config.read(CONFIG_FILE)
+# Create tables automatically if not exist
+Base.metadata.create_all(bind=engine)
 
-DB_HOST = "sd-ram1-kmat.nam.nsroot.net"
-DB_PORT = 1524
-DB_USER = "postgres_dev_179442"
-DB_PASSWORD = "ppdVEB9ACЬ"
-DB_NAME = "gssp_common"
-DB_SESSION_ROLE = "citi_pg_app_owner"
-TABLE_NAME = '"Feedback"'   # quoted for Postgres case-sensitive table name
+# FastAPI instance
+app = FastAPI(title="Feedback API")
 
-
-# -------------------- Database Connection --------------------
-def get_connection():
-    try:
-        connection = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            dbname=DB_NAME,
-        )
-        if logger:
-            logger.info("Database connection established successfully.")
-        return connection
-    except OperationalError as e:
-        if logger:
-            logger.error(f"Failed to connect to the database: {e}")
-        raise
-
-
-# -------------------- Insert JSON --------------------
-def insert_json(data: dict, authorization_coin_id: str) -> dict:
+@app.post("/feedback", response_model=FeedbackResponse)
+def insert_feedback(
+    data: dict,
+    authorization_coin_id: str = Header(None),
+    db: Session = Depends(get_db),
+):
     """
-    Insert JSON into PostgreSQL.
-    - application_id and consumer_id come from the uploaded JSON.
-    - authorization_coin_id comes from the request header.
+    Insert feedback JSON into PostgreSQL.
+    - application_id, consumer_id -> from JSON body
+    - authorization_coin_id -> from request header
     """
+
     application_id = data.get(APP_ID_KEY)
     consumer_id = data.get(CONSUMER_ID_KEY)
 
-    # Validate
+    # Validate fields
     if not application_id or not consumer_id or not authorization_coin_id:
-        if logger:
-            logger.error(MISSING_FIELDS_MSG)
-        return {
-            "success": False,
-            "message": MISSING_FIELDS_MSG,
-            "details": None,
-        }
+        logger.error(MISSING_FIELDS_MSG)
+        raise HTTPException(status_code=400, detail=MISSING_FIELDS_MSG)
 
-    conn = None
     try:
-        conn = get_connection()
-        with conn.cursor() as cursor:
-            # Set session role
-            cursor.execute(sql.SQL("SET ROLE {};").format(sql.Identifier(DB_SESSION_ROLE)))
+        # ORM insert
+        feedback_entry = Feedback(
+            application_id=application_id,
+            consumer_id=consumer_id,
+            authorization_coin_id=authorization_coin_id,
+            feedback_json=json.loads(json.dumps(data))
+        )
+        db.add(feedback_entry)
+        db.commit()
+        db.refresh(feedback_entry)
 
-            # Ensure table exists
-            cursor.execute(sql.SQL(f"""
-                CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                    id SERIAL PRIMARY KEY,
-                    application_id TEXT,
-                    consumer_id TEXT,
-                    authorization_coin_id TEXT,
-                    feedback_json JSONB NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
+        logger.info("Data inserted successfully.")
 
-            # Insert row
-            cursor.execute(
-                sql.SQL(f"""
-                    INSERT INTO {TABLE_NAME}
-                    (application_id, consumer_id, authorization_coin_id, feedback_json)
-                    VALUES (%s, %s, %s, %s);
-                """),
-                (application_id, consumer_id, authorization_coin_id, json.dumps(data)),
-            )
-
-            conn.commit()
-            return {
-                "success": True,
-                "details": {
-                    "message": SUCCESS_MSG,
-                    "table": TABLE_NAME.strip('"'),
-                    "application_id": application_id,
-                    "consumer_id": consumer_id,
-                    "authorization_coin_id": authorization_coin_id,
-                },
-            }
+        return FeedbackResponse(
+            success=True,
+            message=SUCCESS_MSG,
+            details={
+                "table": Feedback.__tablename__,
+                "application_id": application_id,
+                "consumer_id": consumer_id,
+                "authorization_coin_id": authorization_coin_id,
+            },
+        )
 
     except Exception as e:
-        if logger:
-            logger.error(f"Database operation failed: {e}")
-        return {
-            "success": False,
-            "message": "Database operation failed.",
-            "error": str(e),
-        }
-
-    finally:
-        if conn:
-            conn.close()
-            if logger:
-                logger.info("Database connection closed.")
+        logger.error(f"Database operation failed: {e}")
+        raise HTTPException(status_code=500, detail="Database operation failed.")
 
 
 
-# main.py
-import json
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
-from utility import insert_json
-from constants import SUCCESS_MSG, INVALID_JSON_MSG
+# schemas.py
+from pydantic import BaseModel
+from typing import Dict, Any
+
+class FeedbackBase(BaseModel):
+    application_id: str
+    consumer_id: str
+    feedback_json: Dict[str, Any]
+
+class FeedbackCreate(FeedbackBase):
+    authorization_coin_id: str
+
+class FeedbackResponse(BaseModel):
+    success: bool
+    message: str
+    details: Dict[str, Any] | None = None
+
+    class Config:
+        orm_mode = True
+
+# models.py
+from sqlalchemy import Column, Integer, Text, JSON, TIMESTAMP, func
+from db import Base
+
+class Feedback(Base):
+    """
+    ORM model for Feedback table.
+    Stores application_id, consumer_id, authorization_coin_id, and full feedback JSON.
+    """
+    __tablename__ = "Feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Text, nullable=False)
+    consumer_id = Column(Text, nullable=False)
+    authorization_coin_id = Column(Text, nullable=False)
+    feedback_json = Column(JSON, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+
+db.py
+# db.py
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from setup_log import setup_logger
-import uvicorn
 
-# -------------------- Initialize logger --------------------
-try:
-    logger = setup_logger()
-except Exception:
-    logger = None
+logger = setup_logger()
 
-# -------------------- Initialize FastAPI application --------------------
-app = FastAPI()
+# Database config
+DB_HOST = "sd-ram1-kmat.nam.nsroot.net"
+DB_PORT = 1524
+DB_USER = "postgres_dev_179442"
+DB_PASSWORD = "ppdVEB9ACb"
+DB_NAME = "gssp_common"
 
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-@app.post("/upload-json/")
-async def upload_json(
-    file: UploadFile = File(...),
-    authorization_coin_id: str = Header(None, alias="Authorization-Coin-Id")
-):
+# SQLAlchemy setup
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Base class for models
+Base = declarative_base()
+
+def get_db():
     """
-    Upload a JSON file and insert its contents into the database.
-    `authorization_coin_id` must come from request headers, not from the JSON.
+    Dependency for FastAPI routes.
+    Yields a SQLAlchemy session and closes it after use.
     """
-    if not authorization_coin_id:
-        raise HTTPException(status_code=400, detail="Missing Authorization-Coin-Id header")
-
+    db = SessionLocal()
     try:
-        # Read file
-        contents = await file.read()
+        yield db
+    finally:
+        db.close()
 
-        # Parse JSON
-        try:
-            data = json.loads(contents.decode("utf-8"))
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail=INVALID_JSON_MSG)
+# constants.py
 
-        # Insert into DB
-        message = insert_json(data, authorization_coin_id)
-        return {"message": message or SUCCESS_MSG}
+# Keys expected in the uploaded JSON
+APP_ID_KEY = "application_id"
+CONSUMER_ID_KEY = "consumer_id"
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+# Messages
+SUCCESS_MSG = "Data inserted successfully."
+MISSING_FIELDS_MSG = "Missing required fields."
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+# Config file path (if needed)
+CONFIG_FILE = "config.ini"
 
-
-# -------------------- Run Application --------------------
-if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
-        port=9000,
-        log_level="info",
-        workers=4
-    )
-
+project/
+│── constants.py
+│── setup_log.py
+│── db.py
+│── models.py
+│── schemas.py
+│── main.py
