@@ -1,7 +1,8 @@
 # main.py
 
-import uvicorn
-from fastapi import FastAPI, Request, Header, Depends, HTTPException
+from fastapi import FastAPI, Header, Depends, HTTPException
+from fastapi import Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy_utils import database_exists, create_database
 
@@ -23,6 +24,12 @@ except Exception as e:
 app = FastAPI(title="Feedback API")
 
 
+# ---------------- Pydantic Schema ----------------
+class FeedbackRequest(BaseModel):
+    content: dict  # JSON payload goes here
+
+
+# ---------------- Startup Event ----------------
 @app.on_event("startup")
 def create_db_and_tables():
     """
@@ -42,9 +49,10 @@ def create_db_and_tables():
         raise RuntimeError(f"Failed to initialize DB") from e
 
 
+# ---------------- Upload JSON Endpoint ----------------
 @app.post("/upload_json")
 async def upload_json(
-    request: Request,
+    request_data: FeedbackRequest,
     x_correlation_id: str = Header(..., description="Correlation ID"),
     x_application_id: str = Header(..., description="Application ID"),
     x_soeid: str = Header(..., description="Consumer SOEID"),
@@ -52,18 +60,12 @@ async def upload_json(
     db: Session = Depends(get_db)
 ):
     """
-    Store any JSON payload into the Feedback table.
-    Columns:
-    - Application_Id : from header x_application_id
-    - correlation_id : from header x_correlation_id
-    - content : entire JSON payload
-    - soeid : from header x_soeid
-    - authorization_coin_id : from header x_authorization_coin
+    Store the JSON in 'content' column and headers in other columns.
     """
     try:
-        # Read JSON payload (any nested structure)
-        payload = await request.json()
-        logger.info(f"[{x_correlation_id}] JSON received")
+        # Get content from request body
+        payload = request_data.content
+        logger.info(f"[{x_correlation_id}] JSON received in content field")
 
         # Insert into database
         db_feedback = models.Feedback(
@@ -79,7 +81,6 @@ async def upload_json(
         db.refresh(db_feedback)
         logger.info(f"[{x_correlation_id}] Feedback stored in DB with ID {db_feedback.id}")
 
-        # Return success response
         return {
             "success": True,
             "id": db_feedback.id,
@@ -95,6 +96,7 @@ async def upload_json(
 
 # ---------------- Main Entry Point ----------------
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
@@ -102,4 +104,3 @@ if __name__ == "__main__":
         log_level="info",
         reload=True
     )
-
