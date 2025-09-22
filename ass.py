@@ -1,7 +1,7 @@
-# create_feedback_table.py
+# create_feedback_table_psycopg2.py
 
-from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, func, MetaData, Table
-from sqlalchemy_utils import database_exists, create_database
+import psycopg2
+from psycopg2 import sql
 
 # ---------------- PostgreSQL Credentials ----------------
 DB_HOST = "sd-ram1-kmat.nam.nsroot.net"
@@ -10,44 +10,53 @@ DB_USERNAME = "postgres_dev_179442"
 DB_PASSWORD = "ppdVEB9ACЬ"
 DB_NAME = "gssp_common"
 DB_SESSION_ROLE = "citi_pg_app_owner"
-
-DB_URL = f"postgresql+psycopg2://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-# ---------------- Create Engine ----------------
-engine = create_engine(DB_URL)
-
-# ---------------- Ensure Database Exists ----------------
-if not database_exists(engine.url):
-    create_database(engine.url)
-    print(f"Database created: {DB_NAME}")
-
-# ---------------- Metadata ----------------
 SCHEMA_NAME = "gssp_common"
 TABLE_NAME = "Feedback"
-metadata = MetaData(schema=SCHEMA_NAME)
 
-# ---------------- Define Feedback Table ----------------
-feedback_table = Table(
-    TABLE_NAME,
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("Application_Id", String, nullable=False),
-    Column("correlation_id", String, nullable=False),
-    Column("content", JSON, nullable=False),
-    Column("soeid", String, nullable=False),
-    Column("authorization_coin_id", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), server_default=func.now())
+# ---------------- SQL Statements ----------------
+CREATE_SCHEMA_SQL = sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(SCHEMA_NAME))
+
+CREATE_TABLE_SQL = sql.SQL("""
+CREATE TABLE IF NOT EXISTS {}.{} (
+    id SERIAL PRIMARY KEY,
+    Application_Id VARCHAR NOT NULL,
+    correlation_id VARCHAR NOT NULL,
+    content JSON NOT NULL,
+    soeid VARCHAR NOT NULL,
+    authorization_coin_id VARCHAR NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 )
+""").format(sql.Identifier(SCHEMA_NAME), sql.Identifier(TABLE_NAME))
 
-# ---------------- Create Schema & Table ----------------
-with engine.connect() as conn:
-    # Set session role if needed
-    conn.execute(f"SET ROLE {DB_SESSION_ROLE};")
-    # Create schema if it doesn't exist
-    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME};")
+# ---------------- Connect and Execute ----------------
+try:
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USERNAME,
+        password=DB_PASSWORD,
+        dbname=DB_NAME
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    # Set session role
+    cursor.execute(f"SET ROLE {DB_SESSION_ROLE};")
+
+    # Create schema
+    cursor.execute(CREATE_SCHEMA_SQL)
     print(f"Schema ensured: {SCHEMA_NAME}")
 
     # Create table
-    metadata.create_all(bind=engine)
+    cursor.execute(CREATE_TABLE_SQL)
     print(f"Table created: {SCHEMA_NAME}.{TABLE_NAME}")
-    
+
+except Exception as e:
+    print(f"Error creating table: {e}")
+
+finally:
+    if cursor:
+        cursor.close()
+    if conn:
+        conn.close()
+ 
