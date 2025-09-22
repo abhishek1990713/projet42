@@ -1,45 +1,13 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime, func
-from .database import Base
 
-class Feedback(Base):
-    """
-    Feedback table model.
-    Stores request headers as separate columns and the full request body in feedback_json.
-    """
-
-    __tablename__ = "feedback"   # Table name in DB
-
-    id = Column(Integer, primary_key=True, index=True)  # Auto-increment primary key
-    correlation_id = Column(String, nullable=False, index=True)  # From header: x-correlation-id
-    application_id = Column(String, nullable=False, index=True)  # From header: x-application-id
-    soeid = Column(String, nullable=False, index=True)  # From header: x-soeid
-    authorization_coin = Column(String, nullable=False)  # From header: X-Authorization-Coin
-    feedback_json = Column(JSON, nullable=False)  # Full request body (extractedData + feedback)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())  # Auto timestamp
-
-
-import os
 import logging
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.engine import Engine
+from fastapi import FastAPI, HTTPException, Depends, status, Header
+from sqlalchemy.orm import Session
+import uvicorn
+
+from . import models, schemas
+from .database import engine, get_db, DB_NAME
 from .setup_log import setup_logger
-from .constants import (
-    DB_USER,
-    DB_PASSWORD,
-    DB_HOST,
-    DB_PORT,
-    DB_NAME,
-    DB_SESSION_ROLE,
-    DATABASE_ENGINE_SUCCESS,
-    DATABASE_ENGINE_FAILURE,
-    DB_SESSION_CREATED,
-    DB_SESSION_CLOSED,
-    DB_SESSION_ERROR,
-    SET_ROLE_QUERY,
-    SESSION_ROLE_SET_SUCCESS,
-    SESSION_ROLE_SET_FAILURE,
-)
+from .constants import *
 
 # ---------------- Logger Setup ----------------
 try:
@@ -48,57 +16,79 @@ except Exception:
     logger = logging.getLogger(__name__)
     logger.addHandler(logging.NullHandler())
 
-# ---------------- Database URL ----------------
-SQLALCHEMY_DATABASE_URL = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+# ---------------- FastAPI App ----------------
+app = FastAPI(title="Feedback API")
 
-# ---------------- Engine Creation ----------------
-try:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
-    logger.info(DATABASE_ENGINE_SUCCESS)
-except Exception as e:
-    logger.critical(DATABASE_ENGINE_FAILURE.format(e))
-    raise
-
-# ---------------- Session Factory ----------------
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# ---------------- Base Class ----------------
-Base = declarative_base()
-
-# ---------------- Role Setter ----------------
-@event.listens_for(Engine, "connect")
-def set_role(dbapi_connection, connection_record):
+# ---------------- Startup Event ----------------
+@app.on_event("startup")
+def create_db_and_tables():
     """
-    Event listener to set the DB session role for each new connection.
+    Create the database and tables at application startup if they do not exist.
     """
     try:
-        cursor = dbapi_connection.cursor()
-        cursor.execute(SET_ROLE_QUERY.format(DB_SESSION_ROLE))
-        cursor.close()
-        logger.info(SESSION_ROLE_SET_SUCCESS.format(DB_SESSION_ROLE))
+        models.Base.metadata.create_all(bind=engine)
+        logger.info(DB_TABLES_CREATED)
     except Exception as e:
-        logger.error(SESSION_ROLE_SET_FAILURE.format(e))
-        raise
+        logger.error(DB_INIT_FAILURE.format(e))
+        raise RuntimeError(DB_INIT_FAILURE_RUNTIME) from e
 
-# ---------------- Dependency ----------------
-def get_db():
+
+# ---------------- Upload Feedback Endpoint ----------------
+@app.post(UPLOAD_JSON, response_model=schemas.FeedbackResponse, status_code=status.HTTP_201_CREATED)
+def upload_json(
+    payload: dict,
+    db: Session = Depends(get_db),
+    x_correlation_id: str = Header(..., alias="x-correlation-id"),
+    x_application_id: str = Header(..., alias="x-application-id"),
+    x_soeid: str = Header(..., alias="x-soeid"),
+    x_authorization_coin: str = Header(..., alias="X-Authorization-Coin")
+):
     """
-    Dependency to provide a database session for FastAPI endpoints.
-
-    Yields:
-        Session: A SQLAlchemy session instance.
-
-    Ensures that the session is closed after use.
+    Endpoint to save JSON feedback data along with headers.
+    The full request body is stored in feedback_json.
     """
-    db = SessionLocal()
     try:
-        logger.info(DB_SESSION_CREATED)
-        yield db
+        if not payload:
+            logger.warning(INVALID_JSON_LOG)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=INVALID_JSON_MSG,
+            )
+
+        # ---------------- Insert into DB ----------------
+        db_feedback = models.Feedback(
+            correlation_id=x_correlation_id,
+            application_id=x_application_id,
+            soeid=x_soeid,
+            authorization_coin=x_authorization_coin,
+            feedback_json=payload,
+        )
+
+        db.add(db_feedback)
+        db.commit()
+        db.refresh(db_feedback)
+        logger.info(DB_INSERT_SUCCESS_LOG)
+
+        return db_feedback
+
+    except HTTPException as http_exc:
+        logger.error(HTTP_EXCEPTION_LOG.format(http_exc.detail))
+        raise http_exc
     except Exception as e:
-        logger.error(DB_SESSION_ERROR.format(e))
-        raise
-    finally:
-        db.close()
-        logger.info(DB_SESSION_CLOSED)
+        db.rollback()
+        logger.error(DB_OPERATION_FAILED_LOG.format(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=UNEXPECTED_ERROR_MSG.format(str(e)),
+        )
+
+
+# ---------------- Main Entry Point ----------------
+if __name__ == "__main__":
+    uvicorn.run(
+        UVICORN_APP,
+        host=UVICORN_HOST,
+        port=UVICORN_PORT,
+        log_level=UVICORN_LOG_LEVEL,
+        reload=UVICORN_RELOAD,
+    )
