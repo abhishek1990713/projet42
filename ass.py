@@ -1,78 +1,53 @@
-# schemas.py
+# create_feedback_table.py
 
-import json
-import logging
-from typing import Dict, Any
+from sqlalchemy import create_engine, Column, Integer, String, JSON, DateTime, func, MetaData, Table
+from sqlalchemy_utils import database_exists, create_database
 
-from fastapi import HTTPException, status
-from pydantic import BaseModel, validator
+# ---------------- PostgreSQL Credentials ----------------
+DB_HOST = "sd-ram1-kmat.nam.nsroot.net"
+DB_PORT = 1524
+DB_USERNAME = "postgres_dev_179442"
+DB_PASSWORD = "ppdVEB9ACЬ"
+DB_NAME = "gssp_common"
+DB_SESSION_ROLE = "citi_pg_app_owner"
 
-from constant.constants import *
-from exceptions.setup_log import setup_logger
+DB_URL = f"postgresql+psycopg2://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# ---------------- Logger Setup ----------------
-try:
-    logger = setup_logger()
-except Exception:
-    logger = None
+# ---------------- Create Engine ----------------
+engine = create_engine(DB_URL)
 
+# ---------------- Ensure Database Exists ----------------
+if not database_exists(engine.url):
+    create_database(engine.url)
+    print(f"Database created: {DB_NAME}")
 
-class FeedbackCreate(BaseModel):
-    """
-    Pydantic model for creating feedback.
-    Fields map directly to table columns:
-    - Application_Id
-    - correlation_id
-    - content (JSON)
-    - soeid
-    - authorization_coin_id
-    """
-    Application_Id: str
-    correlation_id: str
-    content: Dict[str, Any]
-    soeid: str
-    authorization_coin_id: str
+# ---------------- Metadata ----------------
+SCHEMA_NAME = "gssp_common"
+TABLE_NAME = "Feedback"
+metadata = MetaData(schema=SCHEMA_NAME)
 
-    @validator("content", pre=True, always=True)
-    def validate_content_json(cls, v):
-        """
-        Validate that content is a proper JSON object (dict).
-        """
-        try:
-            if not isinstance(v, dict):
-                if logger:
-                    logger.error(INVALID_JSON_LOG)
-                raise ValueError(INVALID_JSON_MSG)
+# ---------------- Define Feedback Table ----------------
+feedback_table = Table(
+    TABLE_NAME,
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("Application_Id", String, nullable=False),
+    Column("correlation_id", String, nullable=False),
+    Column("content", JSON, nullable=False),
+    Column("soeid", String, nullable=False),
+    Column("authorization_coin_id", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), server_default=func.now())
+)
 
-            if logger:
-                logger.info(VALIDATION_SUCCESS_LOG)
-            return v
-        except ValueError as e:
-            if logger:
-                logger.error(VALIDATION_ERROR_LOG.format(e))
-            raise
-        except Exception as e:
-            if logger:
-                logger.error(UNEXPECTED_VALIDATION_ERROR_LOG.format(e))
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=UNEXPECTED_VALIDATION_ERROR_MSG.format(str(e))
-            )
+# ---------------- Create Schema & Table ----------------
+with engine.connect() as conn:
+    # Set session role if needed
+    conn.execute(f"SET ROLE {DB_SESSION_ROLE};")
+    # Create schema if it doesn't exist
+    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME};")
+    print(f"Schema ensured: {SCHEMA_NAME}")
 
-
-class FeedbackResponse(BaseModel):
-    """
-    Pydantic model for feedback response.
-    Maps ORM table columns to response fields.
-    """
-    id: int
-    Application_Id: str
-    correlation_id: str
-    content: Dict[str, Any]
-    soeid: str
-    authorization_coin_id: str
-    created_at: Any
-
-    class Config:
-        # Allows reading data directly from ORM objects
-        orm_mode = True
+    # Create table
+    metadata.create_all(bind=engine)
+    print(f"Table created: {SCHEMA_NAME}.{TABLE_NAME}")
+    
