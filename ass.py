@@ -1,1 +1,1 @@
-SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+from sqlalchemy_utils import database_exists, create_database
