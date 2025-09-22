@@ -1,4 +1,3 @@
-
 # main.py
 
 import json
@@ -6,6 +5,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, status, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy_utils import database_exists, create_database
+from pydantic import ValidationError
 
 from models import models
 from db.database import engine, get_db, DB_NAME
@@ -18,7 +18,9 @@ try:
     logger = setup_logger()
 except Exception as e:
     print(f"Logger setup failed: {e}")
-    logger = None
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
 # ---------------- FastAPI Initialization ----------------
 app = FastAPI(title="Feedback API")
@@ -27,8 +29,8 @@ app = FastAPI(title="Feedback API")
 @app.on_event("startup")
 def create_db_and_tables():
     """
-    Event handler for FastAPI startup.
-    Creates the database (if it doesn't exist) and initializes all tables.
+    FastAPI startup event.
+    Creates the database if it does not exist and initializes all tables.
     """
     try:
         if not database_exists(engine.url):
@@ -45,78 +47,93 @@ def create_db_and_tables():
 @app.post(UPLOAD_JSON, status_code=status.HTTP_201_CREATED)
 async def upload_json(
     request: Request,
-    x_correlation_id: str = Header(...),
-    x_application_id: str = Header(...),
-    x_soeid: str = Header(...),
-    x_authorization_coin: str = Header(...),
+    x_correlation_id: str = Header(..., description="Correlation ID for tracing requests"),
+    x_application_id: str = Header(..., description="Application ID sending the feedback"),
+    x_soeid: str = Header(..., description="Consumer SOEID"),
+    x_authorization_coin: str = Header(..., description="Authorization Coin ID"),
     content_type: str = Header(..., alias="Content-Type"),
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint to upload feedback JSON with headers providing metadata.
+    Upload JSON feedback.
+    Table columns:
+    - Application_Id
+    - correlation_id
+    - content
+    - soeid
+    - authorization_coin_id
     """
-    # Validate Content-Type
+    # ---------------- Validate Content-Type ----------------
     if content_type.lower() != "application/json":
-        logger.warning(f"Invalid Content-Type: {content_type}")
+        logger.warning(f"[{x_correlation_id}] Invalid Content-Type: {content_type}")
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Content-Type must be application/json"
         )
 
     if not x_authorization_coin:
-        logger.warning(MISSING_AUTH_COIN_ID_LOG)
+        logger.warning(f"[{x_correlation_id}] Missing Authorization Coin ID")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=MISSING_AUTH_COIN_ID_ERROR
         )
 
     try:
-        # Read JSON body
-        feedback_data_json = await request.json()
-        logger.info(FILE_PARSED_AS_JSON)
+        # ---------------- Read JSON body ----------------
+        content_json = await request.json()
+        logger.info(f"[{x_correlation_id}] JSON parsed successfully")
 
-        # Create Pydantic object with header values + JSON
+        # ---------------- Pydantic validation ----------------
         feedback_data = FeedbackCreate(
-            application_id=x_application_id,
-            consumer_id=x_soeid,
-            feedback_json=feedback_data_json
+            Application_Id=x_application_id,
+            correlation_id=x_correlation_id,
+            content=content_json,
+            soeid=x_soeid,
+            authorization_coin_id=x_authorization_coin
         )
-        logger.info(JSON_VALIDATION_SUCCESS)
+        logger.info(f"[{x_correlation_id}] Pydantic validation successful")
 
-        # Store in database
+        # ---------------- Insert into DB ----------------
         db_feedback = models.Feedback(
-            application_id=feedback_data.application_id,
-            consumer_id=feedback_data.consumer_id,
-            authorization_coin_id=x_authorization_coin,
-            feedback_json=feedback_data.feedback_json
+            Application_Id=feedback_data.Application_Id,
+            correlation_id=feedback_data.correlation_id,
+            content=feedback_data.content,
+            soeid=feedback_data.soeid,
+            authorization_coin_id=feedback_data.authorization_coin_id
         )
 
         db.add(db_feedback)
         db.commit()
         db.refresh(db_feedback)
-        logger.info(DB_INSERT_SUCCESS_LOG)
+        logger.info(f"[{x_correlation_id}] Feedback inserted successfully into DB")
 
+        # ---------------- Response ----------------
         return {
             SUCCESS: True,
             MESSAGE: DATA_INSERTED,
             DETAILS: {
                 "id": db_feedback.id,
                 "table": models.TABLE_NAME,
-                "application_id": db_feedback.application_id,
-                "consumer_id": db_feedback.consumer_id,
-                "correlation_id": x_correlation_id
+                "Application_Id": db_feedback.Application_Id,
+                "correlation_id": db_feedback.correlation_id
             }
         }
 
     except json.JSONDecodeError:
-        logger.error(INVALID_JSON_LOG)
+        logger.error(f"[{x_correlation_id}] Invalid JSON")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=INVALID_JSON_MSG
         )
+    except ValidationError as ve:
+        logger.error(f"[{x_correlation_id}] Validation error: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
     except Exception as e:
         db.rollback()
-        logger.error(DB_OPERATION_FAILED_LOG.format(e))
+        logger.error(f"[{x_correlation_id}] Database operation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=UNEXPECTED_ERROR_MSG.format(str(e))
@@ -132,3 +149,35 @@ if __name__ == "__main__":
         log_level=UVICORN_LOG_LEVEL,
         reload=UVICORN_RELOAD
     )
+
+
+# models.py
+
+from sqlalchemy import Column, Integer, String, JSON, DateTime, func
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+TABLE_NAME = "Feedback"
+
+class Feedback(Base):
+    """
+    ORM model for the Feedback table.
+    Columns:
+    - id: Primary key
+    - Application_Id: Application ID from header
+    - correlation_id: Correlation ID from header
+    - content: JSON feedback body
+    - soeid: Consumer SOEID from header
+    - authorization_coin_id: Authorization Coin ID from header
+    - created_at: Timestamp of insertion
+    """
+    __tablename__ = TABLE_NAME
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Application_Id = Column(String, nullable=False)
+    correlation_id = Column(String, nullable=False)
+    content = Column(JSON, nullable=False)
+    soeid = Column(String, nullable=False)
+    authorization_coin_id = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
