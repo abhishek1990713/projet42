@@ -1,52 +1,26 @@
-x_correlation_id: str = Header(..., description="Correlation ID"),
-x_application_id: str = Header(..., description="Application ID"),
-x_soeid: str = Header(..., description="Consumer SOEID"),
-x_authorization_coin: str = Header(..., description="Authorization Coin ID"),
+# models.py
 
-# test_upload_json.py
+from sqlalchemy import Column, Integer, String, JSON, TIMESTAMP, func
+from sqlalchemy.ext.declarative import declarative_base
 
-import requests
+Base = declarative_base()
 
-API_URL = "http://localhost:8000/upload_json"
+class Feedback(Base):
+    __tablename__ = "feedback"
+    __table_args__ = {"schema": "gssp_common"}  # ✅ schema added
 
-# ✅ Corrected headers (use hyphens instead of underscores)
-headers = {
-    "x-correlation-id": "CORR456",
-    "x-application-id": "APP123",
-    "x-soeid": "USER789",
-    "x-authorization-coin": "COIN101"
-}
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    application_id = Column(String, nullable=False)           # ✅ matches DB
+    correlation_id = Column(String, nullable=False)
+    content = Column(JSON, nullable=False)                     # ✅ JSON column
+    soeid = Column(String, nullable=False)
+    authorization_coin_id = Column(String, nullable=False)
+    timestamp = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
-payload = {
-    "content": {
-        "extractedData": {
-            "Bo_Name": "Brazilian Palm Tree LTD",
-            "Country_of_residence": "Norway",
-            "Pay Year": 2025,
-            "Market": "Finland",
-            "Address": "0107 OSLO, NORWAY",
-            "law Article": "Article 4 paragraph 1 of the Tax Convention",
-            "Signature": "SIGMOM",
-            "Seal": "The Norwegian Tax Admin",
-            "Our Reference": "2024/5570364",
-            "Tax_Identification_number": "974761076",
-            "BOID extraction": "",
-            "Address Extraction": "",
-            "MTD SafekeepingAccounts": "",
-            "DepoExtraction": "",
-            "Address verification": "",
-            "postal address": "P.O. Box 9288 Grenland 0134 Oslo",
-            "Document Validation": ""
-        },
-        "feedback": {
-            "Bo Name": {"status": "thumbs_up"},
-            "Country_of_residence": {"status": "thumbs_down", "comments": "wfefngn"},
-            "Pay Year": {"status": "thumbs_down", "comments": "th"}
-        }
-    }
-}
-
-response = requests.post(API_URL, json=payload, headers=headers)
-
-print("Status Code:", response.status_code)
-print("Response JSON:", response.json())
+db_feedback = models.Feedback(
+    application_id=x_application_id,
+    correlation_id=x_correlation_id,
+    content=payload["content"],   # 👈 take "content" key from JSON
+    soeid=x_soeid,
+    authorization_coin_id=x_authorization_coin
+)
