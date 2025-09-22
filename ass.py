@@ -1,11 +1,63 @@
+# test_upload_json.py
+
+import requests
+
+# ---------------- API URL ----------------
+API_URL = "http://localhost:8000/upload_json"  # change if your server runs elsewhere
+
+# ---------------- Headers ----------------
+headers = {
+    "x_application_id": "APP123",
+    "x_correlation_id": "CORR456",
+    "x_soeid": "USER789",
+    "x_authorization_coin": "COIN101"
+}
+
+# ---------------- JSON Payload ----------------
+payload = {
+    "content": {
+        "extractedData": {
+            "Bo_Name": "Brazilian Palm Tree LTD",
+            "Country_of_residence": "Norway",
+            "Pay Year": 2025,
+            "Market": "Finland",
+            "Address": "0107 OSLO, NORWAY",
+            "law Article": "Article 4 paragraph 1 of the Tax Convention",
+            "Signature": "SIGMOM",
+            "Seal": "The Norwegian Tax Admin",
+            "Our Reference": "2024/5570364",
+            "Tax_Identification_number": "974761076",
+            "BOID extraction": "",
+            "Address Extraction": "",
+            "MTD SafekeepingAccounts": "",
+            "DepoExtraction": "",
+            "Address verification": "",
+            "postal address": "P.O. Box 9288 Grenland 0134 Oslo",
+            "Document Validation": ""
+        },
+        "feedback": {
+            "Bo Name": {"status": "thumbs_up"},
+            "Country_of_residence": {"status": "thumbs_down", "comments": "wfefngn"},
+            "Pay Year": {"status": "thumbs_down", "comments": "th"}
+        }
+    }
+}
+
+# ---------------- Make POST Request ----------------
+response = requests.post(API_URL, json=payload, headers=headers)
+
+# ---------------- Print Response ----------------
+print("Status Code:", response.status_code)
+print("Response JSON:", response.json())
+
+
+
 # main.py
 
 from fastapi import FastAPI, Header, Depends, HTTPException
-from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy_utils import database_exists, create_database
-
 from models import models
 from db.database import engine, get_db, DB_NAME
 from exceptions.setup_log import setup_logger
@@ -69,7 +121,7 @@ async def upload_json(
 
         # Insert into database
         db_feedback = models.Feedback(
-            Application_Id=x_application_id,
+            application_id=x_application_id,
             correlation_id=x_correlation_id,
             content=payload,
             soeid=x_soeid,
@@ -84,7 +136,7 @@ async def upload_json(
         return {
             "success": True,
             "id": db_feedback.id,
-            "Application_Id": db_feedback.Application_Id,
+            "application_id": db_feedback.application_id,
             "correlation_id": db_feedback.correlation_id
         }
 
