@@ -1,12 +1,1 @@
-Subject: Login Issue in VDI – Jizo
-
-Hi Aravind,
-
-Jizo is currently facing an issue while logging into the VDI. Once you resolve the issue, he will be able to connect.
-
-Kindly look into this at the earliest.
-
-Thanks,
-[Your Name]
-
-  I have completed the task related to database connectivity with PostgreSQL.
+have created all the required structures and model files, and the project is now ready for deployment
