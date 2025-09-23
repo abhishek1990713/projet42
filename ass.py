@@ -8,3 +8,5 @@ Kindly look into this at the earliest.
 
 Thanks,
 [Your Name]
+
+  I have completed the task related to database connectivity with PostgreSQL.
