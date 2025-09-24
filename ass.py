@@ -1,1 +1,9 @@
-have created all the required structures and model files, and the project is now ready for deployment
+| Date       | Employee 1 - Work | Employee 1 - Challenges | Employee 2 - Work | Employee 2 - Challenges | Employee 3 - Work | Employee 3 - Challenges | Employee 4 - Work | Employee 4 - Challenges |
+| ---------- | ----------------- | ----------------------- | ----------------- | ----------------------- | ----------------- | ----------------------- | ----------------- | ----------------------- |
+| 24-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 25-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 26-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 27-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 28-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 29-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
+| 30-09-2025 |                   |                         |                   |                         |                   |                         |                   |                         |
