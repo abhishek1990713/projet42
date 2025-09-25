@@ -91,3 +91,7 @@ def fetch_feedback(
 # ---------------- Run Server ----------------
 if __name__ == "__main__":
     uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+
+
+Update: Today I worked on building a FastAPI service to fetch feedback data from PostgreSQL using application_id and date range, deployed on port 8000 with Swagger UI for testing.
+Challenges: Faced PostgreSQL authentication issues and Swagger request body visibility, which I debugged and aligned.
