@@ -3,19 +3,25 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 
-from . import models, schemas
-from .database import engine, get_db
+from models import Feedback
+from schemas import FeedbackResponse
+from database import get_db, Base
+from exceptions.setup_log import setup_logger
 
 import uvicorn
 
-app = FastAPI(title="Feedback API", version="1.0")
+# ---------------- Logger Setup ----------------
+try:
+    logger = setup_logger()
+except Exception:
+    logger = None
 
-# ---------------- Create Tables ----------------
-models.Base.metadata.create_all(bind=engine)
+# ---------------- FastAPI App ----------------
+app = FastAPI(title="Feedback API", version="1.0")
 
 
 # ---------------- Endpoint ----------------
-@app.get("/fetch_feedback", response_model=List[schemas.FeedbackResponse])
+@app.get("/fetch_feedback", response_model=List[FeedbackResponse])
 def fetch_feedback(
     application_id: str = Query(..., description="Application ID"),
     day: str = Query(..., description="Date in YYYY-MM-DD format"),
@@ -35,10 +41,10 @@ def fetch_feedback(
         end_datetime = f"{day} 23:59:59"
 
         results = (
-            db.query(models.Feedback)
-            .filter(models.Feedback.application_id == application_id)
-            .filter(models.Feedback.created_at.between(start_datetime, end_datetime))
-            .order_by(models.Feedback.id.asc())
+            db.query(Feedback)
+            .filter(Feedback.application_id == application_id)
+            .filter(Feedback.created_at.between(start_datetime, end_datetime))
+            .order_by(Feedback.id.asc())
             .all()
         )
 
@@ -48,6 +54,8 @@ def fetch_feedback(
         return results
 
     except Exception as e:
+        if logger:
+            logger.error(f"Error fetching feedback: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
