@@ -1,20 +1,24 @@
-from sqlalchemy import Column, Integer, String, DateTime, JSON
-from .database import Base
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+from datetime import datetime
 
-class Feedback(Base):
-    __tablename__ = "idp_feedback"
-    __table_args__ = {"schema": "gssp_common"}
+class FeedbackResponse(BaseModel):
+    audit_id: int
+    consumer_coin: Optional[str]
+    app_id: str
+    app_name: Optional[str]
+    usecase_config_id: Optional[str]
+    request: Optional[Dict[str, Any]]
+    response: Optional[Dict[str, Any]]
+    feedback: Dict[str, Any]  # renamed from feedback_json
+    created_at: datetime
+    updated_at: Optional[datetime]
+    created_by: Optional[str]
+    updated_by: Optional[str]
+    correlation_id: str
 
-    audit_id = Column(Integer, primary_key=True, index=True)
-    consumer_coin = Column(String, nullable=True)
-    app_id = Column(String, nullable=False)
-    app_name = Column(String, nullable=True)
-    usecase_config_id = Column(String, nullable=True)
-    request = Column(JSON, nullable=True)
-    response = Column(JSON, nullable=True)
-    feedback = Column(JSON, nullable=False)  # renamed from feedback_json
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=True)
-    created_by = Column(String, nullable=True)
-    updated_by = Column(String, nullable=True)
-    correlation_id = Column(String, nullable=False)
+    class Config:
+        orm_mode = True
+
+class FeedbackCreate(BaseModel):
+    feedback: Dict[str, Any]  # renamed from feedback_json
