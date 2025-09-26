@@ -1,236 +1,168 @@
-"""
-=========================================================
- database.py - Database Connection and Session Handling
-=========================================================
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-Purpose:
---------
-This module is responsible for handling the database connection 
-using SQLAlchemy ORM. It integrates with CyberArk (via BaseEnvironment) 
-to securely fetch credentials and establish a connection to PostgreSQL.
+# ---------------- Database Config ----------------
+DB_HOST = "sd-ram1-kmat.nam.nsroot.net"
+DB_PORT = 1524
+DB_USERNAME = "postgres_dev_179442"
+DB_PASSWORD = "ppdVEB9ACЬ"
+DB_NAME = "gssp_common"
 
-Key Responsibilities:
----------------------
-1. Configure the SQLAlchemy database engine with:
-   - CyberArk-managed credentials
-   - SSL options
-   - Schema search_path
-   - Application name for tracking
-2. Provide a declarative Base class (`Base`) for ORM models.
-3. Expose a dependency (`get_db`) for FastAPI routes that:
-   - Opens a new DB session.
-   - Yields it to the route handler.
-   - Ensures proper cleanup (close session).
-4. Log connection setup through centralized logger.
+DATABASE_URL = f"postgresql+psycopg2://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-Why This Matters:
------------------
-By centralizing DB setup in this file, other parts of the application 
-(models, endpoints, etc.) can reuse a single reliable connection setup. 
-This makes the system more secure, maintainable, and consistent.
-"""
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Base class for ORM models
+Base = declarative_base()
 
+# Dependency for FastAPI routes
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-
-"""
-=========================================================
- models.py - SQLAlchemy ORM Models
-=========================================================
-
-Purpose:
---------
-Defines the database tables as Python classes using SQLAlchemy ORM.  
-Each class maps to a database table and its columns, making it possible 
-to query the database in an object-oriented way instead of raw SQL.
-
-Key Responsibilities:
----------------------
-1. Define ORM models that represent tables in PostgreSQL.
-2. Specify columns, datatypes, constraints, and schema.
-3. Provide a reusable Base class (imported from database.py).
-
-Why This Matters:
------------------
-ORM models act as the foundation for database operations. Instead of 
-writing raw SQL queries, we can now use ORM objects like `Feedback` 
-to perform queries, inserts, and updates with Pythonic syntax.
-"""
 
 from sqlalchemy import Column, Integer, String, DateTime, JSON
-from database import Base
+from .database import Base
 
 class Feedback(Base):
-    """
-    ORM model for the 'idp_feedback' table inside the 'gssp_common' schema.
-    
-    Represents user feedback records including:
-    - Application ID
-    - Correlation ID
-    - User (SOEID)
-    - Authorization Coin ID
-    - Feedback JSON payload
-    - Timestamp of record creation
-    """
     __tablename__ = "idp_feedback"
-    __table_args__ = {"schema": "gssp_common"}  # specify schema
+    __table_args__ = {"schema": "gssp_common"}
 
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(String, nullable=False)
-    correlation_id = Column(String, nullable=False)
-    soeid = Column(String, nullable=False)
-    authorization_coin_id = Column(String, nullable=False)
+    audit_id = Column(Integer, primary_key=True, index=True)
+    consumer_coin = Column(String, nullable=True)
+    app_id = Column(String, nullable=False)
+    app_name = Column(String, nullable=True)
+    usecase_config_id = Column(String, nullable=True)
+    request = Column(JSON, nullable=True)
+    response = Column(JSON, nullable=True)
     feedback_json = Column(JSON, nullable=False)
-    created_at = Column(DateTime, nullable=Fals
-"""
-=========================================================
- schemas.py - Pydantic Models for Validation
-=========================================================
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=True)
+    created_by = Column(String, nullable=True)
+    updated_by = Column(String, nullable=True)
+    correlation_id = Column(String, nullable=False)
 
-Purpose:
---------
-Defines request and response models using Pydantic. These models ensure:
-1. Validation of incoming data (type-checking).
-2. Serialization of ORM objects into JSON responses.
-3. Clear contracts between API routes and clients.
-
-Key Responsibilities:
----------------------
-1. Define `FeedbackResponse` for API responses.
-2. Enable `.from_orm()` to convert SQLAlchemy ORM objects to JSON.
-3. Provide a clear schema for documentation (via FastAPI Swagger UI).
-
-Why This Matters:
------------------
-Schemas guarantee data integrity between the database and API responses.  
-They enforce type-safety and prevent accidental leakage of unwanted fields.
-"""
 
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, Any
 from datetime import datetime
 
 class FeedbackResponse(BaseModel):
-    """
-    Response schema for feedback records fetched from the database.
-    """
-    id: int
-    application_id: str
-    correlation_id: str
-    soeid: str
-    authorization_coin_id: str
-    feedback_json: Dict
+    audit_id: int
+    consumer_coin: str | None
+    app_id: str
+    app_name: str | None
+    usecase_config_id: str | None
+    request: Dict[str, Any] | None
+    response: Dict[str, Any] | None
+    feedback_json: Dict[str, Any]
     created_at: datetime
+    updated_at: datetime | None
+    created_by: str | None
+    updated_by: str | None
+    correlation_id: str
 
     class Config:
-        orm_mode = True  # allows returning SQLAlchemy objects directly
-"""
-=========================================================
- main.py - FastAPI Application Entry Point
-=========================================================
+        orm_mode = True
 
-Purpose:
---------
-This file defines the FastAPI application and its routes. It serves 
-as the main entry point for running the service.
+class FeedbackCreate(BaseModel):
+    feedback_json: Dict[str, Any]
+# Logging and message constants
+VALIDATION_SUCCESS_LOG = "Payload validation success"
+VALIDATION_ERROR_LOG = "Payload validation failed: {}"
+DB_UPDATE_SUCCESS_LOG = "Feedback updated successfully for app_id={}, correlation_id={}"
+DB_OPERATION_FAILED_LOG = "DB operation failed: {}"
 
-Key Responsibilities:
----------------------
-1. Initialize the FastAPI app with metadata (title, version).
-2. Setup logging for error handling.
-3. Define API endpoints, including:
-   - `/fetch_feedback`: Retrieve feedback records by application_id and date.
-4. Handle database sessions via dependency injection (`get_db`).
-5. Return validated responses using Pydantic schemas.
-
-Why This Matters:
------------------
-`main.py` ties everything together:
-- `database.py` provides DB sessions.
-- `models.py` defines ORM table mappings.
-- `schemas.py` validates responses.
-- `main.py` exposes routes to the outside world.
-
-Example Usage:
---------------
-GET /fetch_feedback?application_id=157013&day=2025-09-25
-
-Response (200 OK):
-[
-  {
-    "id": 1,
-    "application_id": "157013",
-    "correlation_id": "abcd-1234",
-    "soeid": "user1",
-    "authorization_coin_id": "auth123",
-    "feedback_json": { "rating": 5, "comment": "Good" },
-    "created_at": "2025-09-25T08:45:00"
-  }
-]
-"""
-
-from fastapi import FastAPI, Depends, HTTPException, Query
+SUCCESS = "success"
+DATA_UPDATED = "Feedback updated successfully"
+VALIDATION_FAILED_MSG = "Payload validation failed"
+UNEXPECTED_VALIDATION_ERROR_MSG = "Unexpected error: {}"
+from fastapi import FastAPI, HTTPException, Depends, Header, status, Body
 from sqlalchemy.orm import Session
-from typing import List
-from datetime import datetime
-
-from models import Feedback
-from schemas import FeedbackResponse
-from database import get_db
+from db.database import get_db
+from models.models import Feedback
+from service import schemas
 from exceptions.setup_log import setup_logger
-
+from constant.constants import *
+from datetime import datetime
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
-# ---------------- Logger Setup ----------------
+# Logger setup
 try:
     logger = setup_logger()
 except Exception:
     logger = None
 
-# ---------------- FastAPI App ----------------
-app = FastAPI(title="Feedback API", version="1.0")
+app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ---------------- Endpoint ----------------
-@app.get("/fetch_feedback", response_model=List[FeedbackResponse])
-def fetch_feedback(
-    application_id: str = Query(..., description="Application ID"),
-    day: str = Query(..., description="Date in YYYY-MM-DD format"),
-    db: Session = Depends(get_db)
+@app.post("/upload_json", status_code=status.HTTP_200_OK)
+async def upload_json(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    correlation_id: str = Header(...),
+    app_id: str = Header(...),
 ):
-    """
-    Fetch feedback records for a given application_id and date.
-    Uses SQLAlchemy ORM and returns validated JSON responses.
-    """
+    # Validate input
     try:
-        # Validate date format
-        try:
-            datetime.strptime(day, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-
-        start_datetime = f"{day} 00:00:00"
-        end_datetime = f"{day} 23:59:59"
-
-        results = (
-            db.query(Feedback)
-            .filter(Feedback.application_id == application_id)
-            .filter(Feedback.created_at.between(start_datetime, end_datetime))
-            .order_by(Feedback.id.asc())
-            .all()
-        )
-
-        if not results:
-            raise HTTPException(status_code=404, detail="No records found for the given application_id and date")
-
-        return results
-
+        feedback_data = schemas.FeedbackCreate(feedback_json=payload)
+        if logger:
+            logger.info(VALIDATION_SUCCESS_LOG)
     except Exception as e:
         if logger:
-            logger.error(f"Error fetching feedback: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            logger.error(VALIDATION_ERROR_LOG.format(e))
+        raise HTTPException(status_code=400, detail=VALIDATION_FAILED_MSG)
 
+    # Update feedback_json in existing row
+    try:
+        db_feedback = db.query(Feedback).filter(
+            Feedback.correlation_id == correlation_id,
+            Feedback.app_id == app_id
+        ).first()
 
-# ---------------- Run Server ----------------
+        if not db_feedback:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No record found for correlation_id={correlation_id} and app_id={app_id}"
+            )
+
+        db_feedback.feedback_json = payload
+        db_feedback.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(db_feedback)
+
+        if logger:
+            logger.info(DB_UPDATE_SUCCESS_LOG.format(app_id, correlation_id))
+
+        return {
+            SUCCESS: True,
+            "message": DATA_UPDATED,
+            "details": {
+                "audit_id": db_feedback.audit_id,
+                "app_id": db_feedback.app_id,
+                "correlation_id": db_feedback.correlation_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        if logger:
+            logger.error(DB_OPERATION_FAILED_LOG.format(e))
+        raise HTTPException(status_code=500, detail=UNEXPECTED_VALIDATION_ERROR_MSG.format(str(e)))
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8092, reload=True)
