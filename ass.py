@@ -25,11 +25,11 @@ def test_fetch_feedback_success():
     )
     assert response.status_code == 200
     assert isinstance(response.json(), list)
-    # Optional: check keys in the first result
     if response.json():
         data = response.json()[0]
-        expected_keys = ["id", "application_id", "document_id", "correlation_id",
-                         "soeid", "authorization_coin_id", "feedback", "created_at"]
+        expected_keys = ["id", "correlation_id", "application_id", "soeid",
+                         "authorization_coin_id", "document_id", "file_id",
+                         "feedback_json", "created_at"]
         for key in expected_keys:
             assert key in data
 
@@ -70,9 +70,6 @@ def test_fetch_feedback_missing_params():
     assert response.status_code == 422  # FastAPI validation error
 
 
-# Optional: you can add more tests like authorization, date range edge cases, etc.
-
-
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -82,7 +79,7 @@ from typing import List
 from models.models import Feedback
 from db.database import get_db
 from exceptions.setup_log import setup_logger
-from schemas.schemas import FeedbackResponse  # Import Pydantic schema
+from schemas.schemas import FeedbackResponse
 import uvicorn
 
 # Logger Setup
@@ -111,12 +108,11 @@ def fetch_feedback(
     try:
         # Validate date format
         try:
-            start_dt = datetime.strptime(start_day, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_day, "%Y-%m-%d")
+            datetime.strptime(start_day, "%Y-%m-%d")
+            datetime.strptime(end_day, "%Y-%m-%d")
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-        # Convert to full datetime range
         start_datetime = f"{start_day} 00:00:00"
         end_datetime = f"{end_day} 23:59:59"
 
@@ -142,7 +138,7 @@ def fetch_feedback(
         return results
 
     except HTTPException:
-        raise  # Re-raise known HTTP exceptions
+        raise
     except Exception as e:
         if logger:
             logger.error(f"Error fetching feedback: {e}", exc_info=True)
