@@ -1,47 +1,48 @@
-# test_main.py
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from sqlalchemy.orm import Session
 
 client = TestClient(app)
 
-# -----------------------
-# Dummy DB session
-# -----------------------
-class DummyQuery:
-    def filter(self, *args, **kwargs):
-        return self
-    def order_by(self, *args, **kwargs):
-        return self
-    def all(self):
-        return []
-
-class DummySession:
-    def query(self, *args, **kwargs):
-        return DummyQuery()
-
-def get_dummy_db():
-    # FastAPI expects a generator
-    yield DummySession()
+# Replace these with actual values from your DB for testing
+TEST_APPLICATION_ID = "test_app_1"
+TEST_DOCUMENT_ID = "test_doc_1"
+VALID_START_DATE = "2025-09-01"
+VALID_END_DATE = "2025-09-30"
+INVALID_DATE = "2025-13-01"  # Invalid month
 
 
-# Override the DB dependency
-app.dependency_overrides[get_db] = get_dummy_db
-
-
-# -----------------------
-# TEST CASES
-# -----------------------
-def test_fetch_feedback_invalid_date_format():
-    """Should return 400 when date format is invalid"""
+def test_fetch_feedback_success():
+    """Test fetching feedback successfully"""
     response = client.get(
         "/fetch_feedback",
         params={
-            "application_id": "sa1236",
-            "document_id": "123",
-            "start_day": "2025-13-01",  # invalid month
-            "end_day": "2025-10-01"
+            "application_id": TEST_APPLICATION_ID,
+            "document_id": TEST_DOCUMENT_ID,
+            "start_day": VALID_START_DATE,
+            "end_day": VALID_END_DATE,
+        },
+    )
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+    # Optional: check keys in the first result
+    if response.json():
+        data = response.json()[0]
+        expected_keys = ["id", "application_id", "document_id", "correlation_id",
+                         "soeid", "authorization_coin_id", "feedback", "created_at"]
+        for key in expected_keys:
+            assert key in data
+
+
+def test_fetch_feedback_invalid_date():
+    """Test API with invalid date format"""
+    response = client.get(
+        "/fetch_feedback",
+        params={
+            "application_id": TEST_APPLICATION_ID,
+            "document_id": TEST_DOCUMENT_ID,
+            "start_day": INVALID_DATE,
+            "end_day": VALID_END_DATE,
         },
     )
     assert response.status_code == 400
@@ -49,83 +50,105 @@ def test_fetch_feedback_invalid_date_format():
 
 
 def test_fetch_feedback_no_records():
-    """Should return 404 when no feedback records exist"""
+    """Test API when no records exist for given parameters"""
     response = client.get(
         "/fetch_feedback",
         params={
-            "application_id": "sa1236",
-            "document_id": "123",
-            "start_day": "2025-09-01",
-            "end_day": "2025-09-30"
+            "application_id": "nonexistent_app",
+            "document_id": "nonexistent_doc",
+            "start_day": VALID_START_DATE,
+            "end_day": VALID_END_DATE,
         },
     )
     assert response.status_code == 404
     assert "No records found" in response.json()["detail"]
 
 
-def test_fetch_feedback_success():
-    """Should return 200 with feedback records"""
-
-    class MockFeedback:
-        id = 1
-        application_id = "sa1236"
-        document_id = "123"
-        created_at = "2025-09-10 12:00:00"
-        feedback = {"msg": "test feedback"}
-
-    # Override DummyQuery to return a record
-    class SuccessQuery(DummyQuery):
-        def all(self):
-            return [MockFeedback()]
-
-    class SuccessSession(DummySession):
-        def query(self, *args, **kwargs):
-            return SuccessQuery()
-
-    def get_success_db():
-        yield SuccessSession()
-
-    app.dependency_overrides[get_db] = get_success_db
-
-    response = client.get(
-        "/fetch_feedback",
-        params={
-            "application_id": "sa1236",
-            "document_id": "123",
-            "start_day": "2025-09-01",
-            "end_day": "2025-09-30"
-        },
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert data[0]["application_id"] == "sa1236"
-    assert data[0]["document_id"] == "123"
-    assert data[0]["feedback"]["msg"] == "test feedback"
+def test_fetch_feedback_missing_params():
+    """Test API with missing required parameters"""
+    response = client.get("/fetch_feedback")
+    assert response.status_code == 422  # FastAPI validation error
 
 
-def test_fetch_feedback_missing_application_id():
-    """Should return 422 when application_id is missing"""
-    response = client.get(
-        "/fetch_feedback",
-        params={
-            "document_id": "123",
-            "start_day": "2025-09-01",
-            "end_day": "2025-09-30"
-        },
-    )
-    assert response.status_code == 422
+# Optional: you can add more tests like authorization, date range edge cases, etc.
 
 
-def test_fetch_feedback_missing_document_id():
-    """Should return 422 when document_id is missing"""
-    response = client.get(
-        "/fetch_feedback",
-        params={
-            "application_id": "sa1236",
-            "start_day": "2025-09-01",
-            "end_day": "2025-09-30"
-        },
-    )
-    assert response.status_code == 422
+
+from fastapi import FastAPI, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from datetime import datetime
+from typing import List
+
+from models.models import Feedback
+from db.database import get_db
+from exceptions.setup_log import setup_logger
+from schemas.schemas import FeedbackResponse  # Import Pydantic schema
+import uvicorn
+
+# Logger Setup
+try:
+    logger = setup_logger()
+except Exception as e:
+    print(f"Logger initialization failed: {e}")
+    logger = None
+
+# FastAPI App
+app = FastAPI(title="Feedback API", version="1.0")
+
+
+@app.get("/fetch_feedback", response_model=List[FeedbackResponse])
+def fetch_feedback(
+    application_id: str = Query(..., description="Application ID"),
+    document_id: str = Query(..., description="Document ID"),
+    start_day: str = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_day: str = Query(..., description="End date in YYYY-MM-DD format"),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch feedback records for a given application_id and document_id within a date range.
+    Returns a list of feedback records.
+    """
+    try:
+        # Validate date format
+        try:
+            start_dt = datetime.strptime(start_day, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_day, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Convert to full datetime range
+        start_datetime = f"{start_day} 00:00:00"
+        end_datetime = f"{end_day} 23:59:59"
+
+        # Query Feedback table
+        results = (
+            db.query(Feedback)
+            .filter(Feedback.application_id == application_id)
+            .filter(Feedback.document_id == document_id)
+            .filter(Feedback.created_at.between(start_datetime, end_datetime))
+            .order_by(Feedback.id.asc())
+            .all()
+        )
+
+        if not results:
+            raise HTTPException(
+                status_code=404,
+                detail="No records found for the given application_id, document_id, and date range",
+            )
+
+        if logger:
+            logger.info(f"Fetched {len(results)} feedback records for app_id={application_id}, doc_id={document_id}")
+
+        return results
+
+    except HTTPException:
+        raise  # Re-raise known HTTP exceptions
+    except Exception as e:
+        if logger:
+            logger.error(f"Error fetching feedback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+# Run Server
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
