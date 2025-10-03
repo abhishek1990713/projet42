@@ -6,8 +6,8 @@ def fetch_feedback(
     db: Session = Depends(get_db),
 ):
     """
-    Fetch only the feedback_response column for a given application_id 
-    within a date range.
+    Fetch only the 'field_feedback' and 'document_feedback' from feedback_response
+    for a given application_id within a date range.
     """
     try:
         # Validate date format
@@ -37,12 +37,19 @@ def fetch_feedback(
                 detail="No feedback records found for the given application_id in the date range",
             )
 
-        # Extract feedback_response from tuples
-        response_data = [r[0] for r in results]
+        # Extract only field_feedback and document_feedback
+        response_data = []
+        for r in results:
+            feedback_json = r[0]
+            filtered = {
+                "field_feedback": feedback_json.get("field_feedback", {}),
+                "document_feedback": feedback_json.get("document_feedback", {}),
+            }
+            response_data.append(filtered)
 
         if logger:
             logger.info(
-                f"Fetched {len(results)} feedback_response records for application_id={application_id}"
+                f"Fetched {len(results)} filtered feedback records for application_id={application_id}"
             )
 
         return response_data
