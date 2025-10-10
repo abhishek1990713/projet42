@@ -14,11 +14,11 @@ def feedback_report(
 ):
     """
     Fetch feedback data for the given application_id and calculate 
-    field-level thumbs_up percentage across all records.
-    Formula: (thumbs_up / (thumbs_up + thumbs_down)) * 100
+    percentage = (thumbs_up_count / total_field_count) * 100 
+    for each unique field across all records.
     """
     try:
-        # Query all feedbacks for given application_id
+        # Fetch all feedbacks for given application_id
         results = (
             db.query(
                 Feedback.file_id,
@@ -38,29 +38,25 @@ def feedback_report(
                 detail="No feedback records found for the given application_id",
             )
 
-        # Step 1: Aggregate thumbs_up / thumbs_down counts per field
+        # Step 1: Count total occurrences & thumbs_up occurrences for each field
         field_counts = {}
         for _, _, feedback_json in results:
             field_feedback = feedback_json.get("field_feedback", {})
             for field, details in field_feedback.items():
                 status = details.get("status", "").lower()
                 if field not in field_counts:
-                    field_counts[field] = {"thumbs_up": 0, "thumbs_down": 0}
+                    field_counts[field] = {"total": 0, "thumbs_up": 0}
+                field_counts[field]["total"] += 1
                 if status == "thumbs_up":
                     field_counts[field]["thumbs_up"] += 1
-                elif status == "thumbs_down":
-                    field_counts[field]["thumbs_down"] += 1
 
         # Step 2: Compute percentage for each field
-        field_percentages = {}
-        for field, counts in field_counts.items():
-            total = counts["thumbs_up"] + counts["thumbs_down"]
-            percentage = (
-                (counts["thumbs_up"] / total) * 100 if total > 0 else 0
-            )
-            field_percentages[field] = round(percentage, 2)
+        field_percentages = {
+            field: round((counts["thumbs_up"] / counts["total"]) * 100, 2)
+            for field, counts in field_counts.items() if counts["total"] > 0
+        }
 
-        # Step 3: Prepare final response with field_feedback + percentage
+        # Step 3: Build the response
         response_data = []
         for file_id, document_id, feedback_json in results:
             field_feedback = feedback_json.get("field_feedback", {})
@@ -88,4 +84,3 @@ def feedback_report(
         if logger:
             logger.error(f"Error fetching feedback_response: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal Server Error")
-
