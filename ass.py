@@ -1,127 +1,117 @@
+from fastapi import FastAPI, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, and_
-from db.models import FeedbackResponse   # ORM model class
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+
+from db.database import get_db
+from document_stats import get_all_document_types, get_document_percentage_stats
 from logger_config import logger
 
+app = FastAPI(
+    title="Document Statistics API",
+    description="Provides feedback and document performance analytics",
+    version="1.0.0"
+)
 
-def get_all_document_types(db: Session):
+
+@app.get("/document/types", response_model=List[str])
+def fetch_document_types(db: Session = Depends(get_db)):
     """
-    Fetch all distinct document types available in the feedback table.
-    Returns a list like:
-      ["passport", "license", "residence_certificate"]
+    API Endpoint: Get all available document types.
+    ----------------------------------------------------
+    **Purpose:**  
+    Returns a list of unique document types stored in the feedback database.
+
+    **Example Response:**
+    ```json
+    ["passport", "driving_license", "residence_certificate"]
+    ```
     """
     try:
-        logger.info("Fetching all distinct document types...")
-        results = db.query(FeedbackResponse.document_type).distinct().all()
-        return [row.document_type for row in results if row.document_type]
+        logger.info("API call: /document/types")
+        types = get_all_document_types(db)
+        if not types:
+            logger.warning("No document types found in the database.")
+        return types
     except Exception as e:
         logger.error(f"Error fetching document types: {str(e)}", exc_info=True)
         return []
 
 
-def get_document_percentage_stats(db: Session, application_id: str = None,
-                                  start_date: str = None, end_date: str = None):
+@app.get("/document/stats")
+def fetch_document_stats(
+    db: Session = Depends(get_db),
+    application_id: Optional[str] = Query(None, description="Filter results by application_id"),
+    start_date: Optional[str] = Query(None, description="Start date in 'YYYY-MM-DD' format"),
+    end_date: Optional[str] = Query(None, description="End date in 'YYYY-MM-DD' format")
+):
     """
-    Calculate document feedback percentage distribution per application.
+    API Endpoint: Get document percentage statistics.
+    ----------------------------------------------------
+    **Purpose:**  
+    Retrieves aggregated feedback percentage distribution per application ID,
+    filtered optionally by date range.
 
-    Parameters
-    ----------
-    db : Session
-        Active SQLAlchemy database session.
-    application_id : str, optional
-        Specific application_id to filter records (default is None — fetch all).
-    start_date : str, optional
-        Start date for filtering records based on 'created_at' (format: 'YYYY-MM-DD').
-    end_date : str, optional
-        End date for filtering records based on 'created_at' (format: 'YYYY-MM-DD').
+    **Query Parameters:**
+    - `application_id`: Optional. Filter by specific application.
+    - `start_date`: Optional. Include records from this date.
+    - `end_date`: Optional. Include records up to this date.
 
-    Returns
-    -------
-    list[dict]
-        A list of dictionaries, where each dictionary contains:
-        {
-            "application_id": "APP123",
-            "total_documents": 100,
-            "greater_than_81": 40,
-            "range_71_to_80": 30,
-            "range_50_to_70": 20,
-            "less_than_50": 10,
-            "summary_percentage": {
-                ">81%": 40.0,
-                "71–80%": 30.0,
-                "50–70%": 20.0,
-                "<50%": 10.0
-            }
+    **Response Example:**
+    ```json
+    [
+      {
+        "application_id": "APP123",
+        "total_documents": 100,
+        "greater_than_81": 40,
+        "range_71_to_80": 30,
+        "range_50_to_70": 20,
+        "less_than_50": 10,
+        "summary_percentage": {
+          ">81%": 40.0,
+          "71–80%": 30.0,
+          "50–70%": 20.0,
+          "<50%": 10.0
         }
+      }
+    ]
+    ```
     """
     try:
-        logger.info("Fetching document percentage statistics...")
-
-        # Base query
-        query = db.query(
-            FeedbackResponse.application_id,
-            func.count(FeedbackResponse.id).label("total_docs"),
-            func.sum(case((FeedbackResponse.percentage > 81, 1), else_=0)).label("above_81"),
-            func.sum(case(
-                ((FeedbackResponse.percentage >= 71) & (FeedbackResponse.percentage <= 80), 1),
-                else_=0
-            )).label("range_71_80"),
-            func.sum(case(
-                ((FeedbackResponse.percentage >= 50) & (FeedbackResponse.percentage <= 70), 1),
-                else_=0
-            )).label("range_50_70"),
-            func.sum(case((FeedbackResponse.percentage < 50, 1), else_=0)).label("below_50")
+        logger.info(
+            f"API call: /document/stats with params -> application_id={application_id}, start_date={start_date}, end_date={end_date}"
         )
 
-        # Apply filters
-        filters = []
-        if application_id:
-            filters.append(FeedbackResponse.application_id == application_id)
-            logger.info(f"Filtering by application_id: {application_id}")
+        # Validate date inputs
+        if start_date:
+            try:
+                datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                logger.error(f"Invalid start_date format: {start_date}")
+                return {"error": "Invalid start_date format. Use YYYY-MM-DD."}
 
-        if start_date and end_date:
-            filters.append(and_(FeedbackResponse.created_at >= start_date,
-                                FeedbackResponse.created_at <= end_date))
-            logger.info(f"Filtering by date range: {start_date} to {end_date}")
-        elif start_date:
-            filters.append(FeedbackResponse.created_at >= start_date)
-            logger.info(f"Filtering from start_date: {start_date}")
-        elif end_date:
-            filters.append(FeedbackResponse.created_at <= end_date)
-            logger.info(f"Filtering until end_date: {end_date}")
+        if end_date:
+            try:
+                datetime.strptime(end_date, "%Y-%m-%d")
+            except ValueError:
+                logger.error(f"Invalid end_date format: {end_date}")
+                return {"error": "Invalid end_date format. Use YYYY-MM-DD."}
 
-        if filters:
-            query = query.filter(and_(*filters))
+        # Fetch data from document_stats.py
+        result = get_document_percentage_stats(
+            db=db,
+            application_id=application_id,
+            start_date=start_date,
+            end_date=end_date
+        )
 
-        query = query.group_by(FeedbackResponse.application_id)
-        results = query.all()
+        if not result:
+            logger.warning("No statistics found for the provided filters.")
+            return {"message": "No data available for the provided filters."}
 
-        if not results:
-            logger.warning("No records found for given filters or dataset is empty")
-            return []
-
-        response_data = []
-        for row in results:
-            total_docs = row.total_docs or 0
-            data = {
-                "application_id": row.application_id,
-                "total_documents": total_docs,
-                "greater_than_81": row.above_81 or 0,
-                "range_71_to_80": row.range_71_80 or 0,
-                "range_50_to_70": row.range_50_70 or 0,
-                "less_than_50": row.below_50 or 0,
-                "summary_percentage": {
-                    ">81%": round((row.above_81 / total_docs) * 100, 2) if total_docs else 0,
-                    "71–80%": round((row.range_71_80 / total_docs) * 100, 2) if total_docs else 0,
-                    "50–70%": round((row.range_50_70 / total_docs) * 100, 2) if total_docs else 0,
-                    "<50%": round((row.below_50 / total_docs) * 100, 2) if total_docs else 0,
-                },
-            }
-            response_data.append(data)
-
-        logger.info("Document percentage statistics computed successfully.")
-        return response_data
+        logger.info("Document statistics fetched successfully.")
+        return result
 
     except Exception as e:
-        logger.error(f"Error in get_document_percentage_stats: {str(e)}", exc_info=True)
-        return []
+        logger.error(f"Error in /document/stats: {str(e)}", exc_info=True)
+        return {"error": str(e)}
