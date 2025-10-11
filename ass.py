@@ -1,308 +1,127 @@
-Perfect 👍 — you already have a clean, production-style FastAPI setup for your **feedback service** and **document statistics** APIs.
-
-Below is a **detailed documentation** of the **entire workflow**, including:
-
-* Functional overview
-* Input/output formats
-* API endpoints with request/response samples
-* Flow diagram
-* Database details
-* Error handling
-
----
-
-# 📘 **Project Documentation — Feedback Service & Document Statistics**
-
----
-
-## 🧩 **1. Overview**
-
-This service provides:
-
-* A **Feedback API** that accepts structured feedback JSON data and stores it in a PostgreSQL database.
-* A **Statistics API** that computes percentage-based performance metrics (positive/negative feedback ratio) by `document_type`.
-
-The project uses:
-
-* **FastAPI** for the REST APIs
-* **SQLAlchemy ORM** for database operations
-* **Pydantic** for input validation
-* **PostgreSQL** with `JSONB` for feedback storage
-* **Logger** for structured logging
-
----
-
-## ⚙️ **2. Core Workflow**
-
-### Step-by-Step Data Flow:
-
-1. **User submits a feedback JSON** to `/feedback_service` (POST).
-2. The backend extracts:
-
-   * `Document_type` from payload.
-   * Feedback stats (`thumbs_up`, `thumbs_down`, etc.).
-3. The service calculates:
-
-   * Total fields (`field_count`)
-   * Positive and negative counts
-   * Positive percentage = `(positive_count / total_fields) × 100`
-4. Data is inserted into the `feedback` table in PostgreSQL.
-5. The `/document_stats` GET API returns aggregated statistics by `document_type`.
-6. The `/document_types` GET API lists all available document types.
-
----
-
-## 🗂️ **3. Database Design**
-
-### **Table Name:**
-
-`gssp_common.feedback`  *(as per `GSSP_SCHEMA` and `TABLE_NAME` constants)*
-
-### **Schema:**
-
-| Column Name           | Type      | Description                                 |
-| --------------------- | --------- | ------------------------------------------- |
-| id                    | INT (PK)  | Auto-generated ID                           |
-| correlation_id        | TEXT      | Request tracking ID                         |
-| application_id        | TEXT      | Application identifier                      |
-| document_id           | TEXT      | Unique document identifier                  |
-| file_id               | TEXT      | Unique file identifier                      |
-| authorization_coin_id | TEXT      | Authorization token ID                      |
-| feedback_response     | JSONB     | Raw feedback payload                        |
-| feedback_source       | TEXT      | Feedback origin (API/UI)                    |
-| created_by            | TEXT      | User who created feedback                   |
-| created_on            | TIMESTAMP | Timestamp (auto-generated)                  |
-| document_type         | TEXT      | Document category (e.g., passport, license) |
-| field_count           | INT       | Total feedback fields                       |
-| positive_count        | INT       | Count of thumbs_up                          |
-| negative_count        | INT       | Count of thumbs_down                        |
-| percentage            | FLOAT     | Positive feedback %                         |
-
----
-
-## 🧾 **4. API Endpoints**
-
----
-
-### 🟢 **A. POST /feedback_service**
-
-#### **Purpose**
-
-Insert feedback data into the database with calculated statistics.
-
-#### **Headers**
-
-| Header Name            | Description                 |
-| ---------------------- | --------------------------- |
-| `x-correlation-id`     | Unique ID for tracking      |
-| `x-application-id`     | Application identifier      |
-| `x-created-by`         | Creator username            |
-| `x-document-id`        | Document ID                 |
-| `x-file-id`            | File ID                     |
-| `x-authorization-coin` | Authorization token         |
-| `x-feedback-source`    | Source of feedback (UI/API) |
-
-#### **Request Body (JSON)**
-
-```json
-{
-  "Document_type": "passport",
-  "extractedData": {
-    "Name": "John Doe",
-    "Country": "Japan"
-  },
-  "feedback": {
-    "Name": {"status": "thumbs_up"},
-    "Country": {"status": "thumbs_down", "comments": "Mismatch with passport"}
-  }
-}
-```
-
-#### **Processing Logic**
-
-* Extract `Document_type` from payload.
-* Count:
-
-  * `field_count` = total fields in `feedback`.
-  * `positive_count` = number of `thumbs_up`.
-  * `negative_count` = number of `thumbs_down`.
-* Compute:
-
-  * `percentage = (positive_count / field_count) * 100`.
-* Insert record in database.
-
-#### **Response**
-
-```json
-{
-  "message": "Data inserted successfully",
-  "success": true,
-  "details": {
-    "id": 102,
-    "correlation_id": "corr-001",
-    "application_id": "app-789",
-    "created_by": "akshya",
-    "document_id": "DOC001",
-    "feedback_source": "UI",
-    "file_id": "FILE001",
-    "document_type": "passport",
-    "field_count": 2,
-    "positive_count": 1,
-    "negative_count": 1,
-    "percentage": 50.0
-  }
-}
-```
-
----
-
-### 🟣 **B. GET /document_stats**
-
-#### **Purpose**
-
-Retrieve feedback statistics for a given `document_type`.
-
-#### **Header**
-
-| Header Name     | Description                                                          | Required |
-| --------------- | -------------------------------------------------------------------- | -------- |
-| `document_type` | Type of document to filter (e.g., passport, license, bill_of_lading) | ✅ Yes    |
-
-#### **Response Example**
-
-```json
-[
-  {
-    "document_type": "passport",
-    "total_documents": 25,
-    "greater_than_81": 10,
-    "range_71_to_80": 6,
-    "range_50_to_70": 7,
-    "less_than_50": 2,
-    "summary_percentage": {
-      ">81%": 40.0,
-      "71–80%": 24.0,
-      "50–70%": 28.0,
-      "<50%": 8.0
-    }
-  }
-]
-```
-
-#### **Logic**
-
-* If `document_type` is passed → filter by that type.
-* Else → return stats for all available document types.
-* Uses SQL `CASE` conditions to compute distribution ranges:
-
-  * `>81%`
-  * `71–80%`
-  * `50–70%`
-  * `<50%`
-
----
-
-### 🔵 **C. GET /document_types**
-
-#### **Purpose**
-
-Fetch all distinct `document_type` values from the feedback table.
-
-#### **Response Example**
-
-```json
-[
-  "passport",
-  "driving_license",
-  "bill_of_lading",
-  "residence_certificate"
-]
-```
-
----
-
-## 🔁 **5. Full Process Flow Diagram**
-
-```text
-               ┌────────────────────────────┐
-               │  Client Application (UI)  │
-               └────────────┬──────────────┘
-                            │
-                            ▼
-               ┌────────────────────────────┐
-               │  POST /feedback_service     │
-               │  (Feedback Submission API)  │
-               └────────────┬──────────────┘
-                            │
-                            ▼
-          ┌──────────────────────────────────────────┐
-          │ Extract "Document_type" & feedback stats  │
-          │ field_count, positive_count, percentage   │
-          └────────────────┬─────────────────────────┘
-                            │
-                            ▼
-              ┌──────────────────────────┐
-              │  PostgreSQL (feedback)   │
-              │  Insert structured data  │
-              └────────────┬─────────────┘
-                            │
-                            ▼
-       ┌────────────────────────────┐      ┌────────────────────────────┐
-       │ GET /document_stats        │      │ GET /document_types        │
-       │ Calculate stats by type    │      │ Fetch distinct types       │
-       └────────────────────────────┘      └────────────────────────────┘
-                            │
-                            ▼
-              ┌──────────────────────────┐
-              │ JSON Response to Client  │
-              └──────────────────────────┘
-```
-
----
-
-## ⚠️ **6. Error Handling**
-
-| Error Type                | Example Message                                   | Cause                      |
-| ------------------------- | ------------------------------------------------- | -------------------------- |
-| 400 Bad Request           | `"Validation failed: Missing field"`              | Invalid input JSON         |
-| 404 Not Found             | `"No records found for given document type"`      | No data for requested type |
-| 500 Internal Server Error | `"Database operation failed: connection timeout"` | DB/ORM failure             |
-
----
-
-## 🪵 **7. Logging**
-
-All logs go through `logger_config.py`.
-
-**Examples:**
-
-```
-INFO  - [main.py] Fetching document percentage statistics...
-INFO  - [main.py] Inserted feedback record for document_type: passport
-ERROR - [document_stats.py] Error in get_document_percentage_stats: division by zero
-```
-
----
-
-## 🧮 **8. Key Computation Formula**
-
-```python
-field_count = len(feedback.keys())
-positive_count = sum(1 for v in feedback.values() if v["status"] == "thumbs_up")
-negative_count = sum(1 for v in feedback.values() if v["status"] == "thumbs_down")
-percentage = (positive_count / field_count) * 100 if field_count > 0 else 0
-```
-
----
-
-## ✅ **9. Summary**
-
-| Functionality      | API                      | Description                             |
-| ------------------ | ------------------------ | --------------------------------------- |
-| Insert Feedback    | `POST /feedback_service` | Stores feedback with calculated metrics |
-| Document Stats     | `GET /document_stats`    | Retrieves summary by `document_type`    |
-| All Document Types | `GET /document_types`    | Lists all unique document types in DB   |
-
----
-
-Would you like me to create a **PDF version** of this documentation (with clean formatting and section headers) so you can share it or attach it to your project?
+from sqlalchemy.orm import Session
+from sqlalchemy import func, case, and_
+from db.models import FeedbackResponse   # ORM model class
+from logger_config import logger
+
+
+def get_all_document_types(db: Session):
+    """
+    Fetch all distinct document types available in the feedback table.
+    Returns a list like:
+      ["passport", "license", "residence_certificate"]
+    """
+    try:
+        logger.info("Fetching all distinct document types...")
+        results = db.query(FeedbackResponse.document_type).distinct().all()
+        return [row.document_type for row in results if row.document_type]
+    except Exception as e:
+        logger.error(f"Error fetching document types: {str(e)}", exc_info=True)
+        return []
+
+
+def get_document_percentage_stats(db: Session, application_id: str = None,
+                                  start_date: str = None, end_date: str = None):
+    """
+    Calculate document feedback percentage distribution per application.
+
+    Parameters
+    ----------
+    db : Session
+        Active SQLAlchemy database session.
+    application_id : str, optional
+        Specific application_id to filter records (default is None — fetch all).
+    start_date : str, optional
+        Start date for filtering records based on 'created_at' (format: 'YYYY-MM-DD').
+    end_date : str, optional
+        End date for filtering records based on 'created_at' (format: 'YYYY-MM-DD').
+
+    Returns
+    -------
+    list[dict]
+        A list of dictionaries, where each dictionary contains:
+        {
+            "application_id": "APP123",
+            "total_documents": 100,
+            "greater_than_81": 40,
+            "range_71_to_80": 30,
+            "range_50_to_70": 20,
+            "less_than_50": 10,
+            "summary_percentage": {
+                ">81%": 40.0,
+                "71–80%": 30.0,
+                "50–70%": 20.0,
+                "<50%": 10.0
+            }
+        }
+    """
+    try:
+        logger.info("Fetching document percentage statistics...")
+
+        # Base query
+        query = db.query(
+            FeedbackResponse.application_id,
+            func.count(FeedbackResponse.id).label("total_docs"),
+            func.sum(case((FeedbackResponse.percentage > 81, 1), else_=0)).label("above_81"),
+            func.sum(case(
+                ((FeedbackResponse.percentage >= 71) & (FeedbackResponse.percentage <= 80), 1),
+                else_=0
+            )).label("range_71_80"),
+            func.sum(case(
+                ((FeedbackResponse.percentage >= 50) & (FeedbackResponse.percentage <= 70), 1),
+                else_=0
+            )).label("range_50_70"),
+            func.sum(case((FeedbackResponse.percentage < 50, 1), else_=0)).label("below_50")
+        )
+
+        # Apply filters
+        filters = []
+        if application_id:
+            filters.append(FeedbackResponse.application_id == application_id)
+            logger.info(f"Filtering by application_id: {application_id}")
+
+        if start_date and end_date:
+            filters.append(and_(FeedbackResponse.created_at >= start_date,
+                                FeedbackResponse.created_at <= end_date))
+            logger.info(f"Filtering by date range: {start_date} to {end_date}")
+        elif start_date:
+            filters.append(FeedbackResponse.created_at >= start_date)
+            logger.info(f"Filtering from start_date: {start_date}")
+        elif end_date:
+            filters.append(FeedbackResponse.created_at <= end_date)
+            logger.info(f"Filtering until end_date: {end_date}")
+
+        if filters:
+            query = query.filter(and_(*filters))
+
+        query = query.group_by(FeedbackResponse.application_id)
+        results = query.all()
+
+        if not results:
+            logger.warning("No records found for given filters or dataset is empty")
+            return []
+
+        response_data = []
+        for row in results:
+            total_docs = row.total_docs or 0
+            data = {
+                "application_id": row.application_id,
+                "total_documents": total_docs,
+                "greater_than_81": row.above_81 or 0,
+                "range_71_to_80": row.range_71_80 or 0,
+                "range_50_to_70": row.range_50_70 or 0,
+                "less_than_50": row.below_50 or 0,
+                "summary_percentage": {
+                    ">81%": round((row.above_81 / total_docs) * 100, 2) if total_docs else 0,
+                    "71–80%": round((row.range_71_80 / total_docs) * 100, 2) if total_docs else 0,
+                    "50–70%": round((row.range_50_70 / total_docs) * 100, 2) if total_docs else 0,
+                    "<50%": round((row.below_50 / total_docs) * 100, 2) if total_docs else 0,
+                },
+            }
+            response_data.append(data)
+
+        logger.info("Document percentage statistics computed successfully.")
+        return response_data
+
+    except Exception as e:
+        logger.error(f"Error in get_document_percentage_stats: {str(e)}", exc_info=True)
+        return []
