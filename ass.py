@@ -108,3 +108,95 @@ async def upload_json(
         if logger:
             logger.error(DB_OPERATION_FAILED_LOG.format(e), exc_info=True)
         raise HTTPException(status_code=500, detail=UNEXPECTED_VALIDATION_ERROR_MSG.format(str(e)))
+
+
+
+
+
+from sqlalchemy.orm import Session
+from sqlalchemy import func, case
+from db.models import FeedbackResponse   # ORM model class (update import path if needed)
+from logger_config import logger
+
+
+def get_document_percentage_stats(db: Session, document_type: str = None):
+    """
+    Function to calculate feedback percentage distribution per document type.
+    Filters by 'document_type' if provided.
+    Returns:
+      [
+        {
+          "document_type": "passport",
+          "total_documents": 25,
+          "greater_than_81": 10,
+          "range_71_to_80": 6,
+          "range_50_to_70": 7,
+          "less_than_50": 2,
+          "summary_percentage": {
+            ">81%": 40.0,
+            "71–80%": 24.0,
+            "50–70%": 28.0,
+            "<50%": 8.0
+          }
+        }
+      ]
+    """
+    try:
+        logger.info("Fetching document percentage statistics...")
+
+        # Base query
+        query = db.query(
+            FeedbackResponse.document_type,
+            func.count(FeedbackResponse.id).label("total_docs"),
+            func.sum(case((FeedbackResponse.percentage > 81, 1), else_=0)).label("above_81"),
+            func.sum(case(
+                ((FeedbackResponse.percentage >= 71) & (FeedbackResponse.percentage <= 80), 1),
+                else_=0
+            )).label("range_71_80"),
+            func.sum(case(
+                ((FeedbackResponse.percentage >= 50) & (FeedbackResponse.percentage <= 70), 1),
+                else_=0
+            )).label("range_50_70"),
+            func.sum(case((FeedbackResponse.percentage < 50, 1), else_=0)).label("below_50")
+        )
+
+        # Apply filter if document_type is passed in header
+        if document_type:
+            logger.info(f"Filtering statistics for document_type: {document_type}")
+            query = query.filter(FeedbackResponse.document_type == document_type)
+
+        # Group by document_type to get stats for each type
+        query = query.group_by(FeedbackResponse.document_type)
+        results = query.all()
+
+        # If no data found
+        if not results:
+            logger.warning("No records found for given document_type or dataset is empty")
+            return []
+
+        # Prepare structured response
+        response_data = []
+        for row in results:
+            total_docs = row.total_docs or 0
+            data = {
+                "document_type": row.document_type,
+                "total_documents": total_docs,
+                "greater_than_81": row.above_81 or 0,
+                "range_71_to_80": row.range_71_80 or 0,
+                "range_50_to_70": row.range_50_70 or 0,
+                "less_than_50": row.below_50 or 0,
+                "summary_percentage": {
+                    ">81%": round((row.above_81 / total_docs) * 100, 2) if total_docs else 0,
+                    "71–80%": round((row.range_71_80 / total_docs) * 100, 2) if total_docs else 0,
+                    "50–70%": round((row.range_50_70 / total_docs) * 100, 2) if total_docs else 0,
+                    "<50%": round((row.below_50 / total_docs) * 100, 2) if total_docs else 0,
+                },
+            }
+            response_data.append(data)
+
+        logger.info("Document percentage statistics computed successfully.")
+        return response_data
+
+    except Exception as e:
+        logger.error(f"Error in get_document_percentage_stats: {str(e)}", exc_info=True)
+        return []
