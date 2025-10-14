@@ -1,162 +1,51 @@
-document_stats.py
-
-This module calculates document-level accuracy statistics for a specific 
-application_id within a given date range (start_date and end_date).
-
-📘 Description:
-----------------
-The function `document_stats()` retrieves feedback records for a given 
-application_id and date range. For each document, it calculates the 
-document-wise accuracy percentage based on field-level thumbs-up and thumbs-down 
-feedback.
-
-✅ Formula (in words):
-----------------------
-For each document:
-    Document Accuracy (%) = (Total Thumbs-Up Fields / Total Feedback Fields) × 100
-
-The function then counts how many documents fall into each accuracy range:
-- Greater than 81%
-- Between 71% and 80%
-- Between 50% and 70%
-- Less than 50%
-
-Finally, it returns a structured summary showing:
-- Application ID
-Finally, it returns a structured summary showing:
-- Application ID
-- Date range used
-- Total number of documents
-- Count of documents in each accuracy range
-""
-
-
 """
-feedback_report.py
+main.py
 
-This module generates a feedback accuracy report for a specific `application_id` 
-within a given date range (start_date and end_date).
+This FastAPI application handles feedback submission and generates
+aggregated reports (high-level and field-level) for a given application_id.
 
-📘 Description:
-----------------
-The function `feedback_report()` fetches all feedback entries from the database 
-for a specific application and calculates field-level accuracy.
+📘 Endpoints:
+1. /feedback_service      → Insert new feedback data
+2. /aggregated_report     → Generate combined high-level and field-level reports
 
-Each feedback record contains multiple fields, each having a `status` 
-(either "thumbs_up" or "thumbs_down").
+High-level report uses:
+    → get_document_percentage_stats(application_id, start_date, end_date)
 
-✅ Formula (explained in words):
---------------------------------
-Field-Level Accuracy (%) = (Number of Thumbs-Up for the field / Total Feedback Count for the field) × 100
-
-Example:
-If for the field "Address", there are 8 thumbs_up and 2 thumbs_down,
-then accuracy = (8 / 10) × 100 = 80%.
-
-The function finally returns a structured response containing:
-- Application ID
-- Each field name
-- Field-Level Accuracy (%)
-- Field-Level Document Count
+Field-level report uses:
+    → feedback_report(application_id, start_date, end_date)
 """
 
-
-
-"""
-====================================================================================
-File Name: main.py
-Description:
--------------
-This FastAPI application serves as the backend for managing and analyzing feedback 
-data received from the frontend. It performs the following key operations:
-
-1. Receives feedback data for each document, including detailed field-level feedback 
-   (thumbs_up / thumbs_down) from users.
-
-2. Calculates important feedback metrics such as:
-   - Total number of feedback fields (field_count)
-   - Number of positive feedback (thumbs_up_count)
-   - Number of negative feedback (thumbs_down_count)
-   - Document-wise average accuracy (docswise_avg_accuracy)
-
-3. Stores the feedback records in the database along with metadata such as 
-   correlation_id, application_id, document_id, file_name, and timestamps.
-
-4. Provides APIs to:
-   - Insert new feedback entries (`/feedback_service`)
-   - Generate aggregated reports combining high-level document statistics 
-     and detailed field-level feedback (`/aggregated_report`)
-
-------------------------------------------------------------------------------------
-Formula Explanation:
---------------------
-1️⃣ **Field Count**
-   field_count = Number of fields having a feedback status ("thumbs_up" or "thumbs_down")
-
-2️⃣ **Positive Feedback Count**
-   thumbs_up_count = Number of fields with status = "thumbs_up"
-
-3️⃣ **Negative Feedback Count**
-   thumbs_down_count = Number of fields with status = "thumbs_down"
-
-4️⃣ **Document-Wise Average Accuracy**
-   docswise_avg_accuracy = (thumbs_up_count / field_count) * 100
-
-------------------------------------------------------------------------------------
-Example:
----------
-If a document has 10 fields reviewed and 8 of them are marked as "thumbs_up",
-then:
-
-  field_count = 10
-  thumbs_up_count = 8
-  thumbs_down_count = 2
-  docswise_avg_accuracy = (8 / 10) * 100 = 80%
-
-Hence, this document's accuracy will be considered “Good” (based on threshold logic).
-
-------------------------------------------------------------------------------------
-Logging & Error Handling:
--------------------------
-✅ All exceptions are captured using structured logging via `setup_logger`.
-✅ Database operations are logged for insertions and failures.
-✅ Validation errors raise HTTP 400 responses with clear messages.
-✅ Any unexpected errors are handled gracefully with HTTP 500 responses.
-
-====================================================================================
-"""
-
-from fastapi import FastAPI, Request, HTTPException, Depends, Header, status, Query, Body
+from fastapi import (
+    FastAPI,
+    Request,
+    HTTPException,
+    Depends,
+    Header,
+    status,
+    Query,
+    Body
+)
 from sqlalchemy.orm import Session
 from db.database import get_db
 from models.models import Feedback
-from service import schemas
 from exceptions.setup_log import setup_logger
 from constant.constants import *
-import uvicorn
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any
-from datetime import datetime
-from service.schemas import HighLevelResponse
-import pandas as pd
 from document_stats import get_document_percentage_stats
 from feedback_report import feedback_report
+from datetime import datetime
+from typing import Dict, Any
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
-
-# -------------------------------------------------------------------------------
-# Logger Setup
-# -------------------------------------------------------------------------------
+# Logger setup
 try:
     logger = setup_logger()
 except Exception:
     logger = None
 
+app = FastAPI(title="Feedback Analytics API")
 
-# -------------------------------------------------------------------------------
-# FastAPI Application Setup
-# -------------------------------------------------------------------------------
-app = FastAPI()
-
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -165,17 +54,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# -------------------------------------------------------------------------------
-# Function: calculate_feedback_stats
-# Description:
-# This function calculates key feedback metrics for a single document.
-# -------------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Utility Function
+# ---------------------------------------------------------------------
 def calculate_feedback_stats(feedback: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calculate field_count, positive_count, negative_count, and percentage.
+    Calculate field count, thumbs up/down counts, and document-wise accuracy.
+
     Formula:
-        docswise_avg_accuracy = (positive_count / field_count) * 100
+    Document Accuracy (%) = (Thumbs-Up Fields / Total Fields) × 100
     """
     positive_count = 0
     negative_count = 0
@@ -196,14 +83,12 @@ def calculate_feedback_stats(feedback: Dict[str, Any]) -> Dict[str, Any]:
         "feedback_count": field_count,
         "thumbs_up_count": positive_count,
         "thumbs_down_count": negative_count,
-        "docswise_avg_accuracy": docswise_avg_accuracy,
+        "docswise_avg_accuracy": docswise_avg_accuracy
     }
 
-# -------------------------------------------------------------------------------
-# POST Endpoint: /feedback_service
-# Description:
-# Accepts JSON feedback input, calculates metrics, stores in DB, and logs all actions.
-# -------------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# POST Endpoint — Insert Feedback
+# ---------------------------------------------------------------------
 @app.post("/feedback_service", status_code=status.HTTP_201_CREATED)
 async def upload_json(
     request: Request,
@@ -215,37 +100,17 @@ async def upload_json(
     x_document_id: str = Header(...),
     x_file_id: str = Header(...),
     x_authorization_coin: str = Header(...),
-    x_feedback_source: str = Header(...)
+    x_feedback_source: str = Header(...),
 ):
+    """
+    Accepts feedback JSON and stores it in the database with computed stats.
+    """
     try:
         document_type = payload.get("Document_type", "Unknown")
         feedback_section = payload.get("field_feedback", {})
+
         stats = calculate_feedback_stats(feedback_section)
 
-        feedback_data = schemas.FeedbackResponse(
-            feedback_id=0,
-            correlation_id=x_correlation_id,
-            application_id=x_application_id,
-            document_id=x_document_id,
-            file_name=x_file_id,
-            authorization_coin_id=x_authorization_coin,
-            feedback_response=payload,
-            feedback_source=x_feedback_source,
-            created_by=x_created_by,
-            created_on=datetime.now(),
-            feedback_count=stats.get("feedback_count", 0),
-            thumbs_up_count=stats.get("thumbs_up_count", 0),
-            thumbs_down_count=stats.get("thumbs_down_count", 0),
-            docswise_avg_accuracy=stats.get("docswise_avg_accuracy", 0.0),
-            document_type=document_type
-        )
-
-    except Exception as e:
-        if logger:
-            logger.error(VALIDATION_ERROR_LOG.format(e), exc_info=True)
-        raise HTTPException(status_code=400, detail=VALIDATION_FAILED_MSG)
-
-    try:
         db_feedback = Feedback(
             correlation_id=x_correlation_id,
             created_by=x_created_by,
@@ -259,7 +124,8 @@ async def upload_json(
             thumbs_up_count=stats["thumbs_up_count"],
             thumbs_down_count=stats["thumbs_down_count"],
             docswise_avg_accuracy=stats["docswise_avg_accuracy"],
-            document_type=document_type
+            document_type=document_type,
+            created_on=datetime.now()
         )
 
         db.add(db_feedback)
@@ -271,4 +137,85 @@ async def upload_json(
 
         return {
             "message": DATA_INSERTED,
-            SUCCESS: True,
+            "success": True,
+            "details": {
+                "feedback_id": db_feedback.feedback_id,
+                "correlation_id": db_feedback.correlation_id,
+                "application_id": db_feedback.application_id,
+                "created_by": db_feedback.created_by,
+                "document_id": db_feedback.document_id,
+                "feedback_source": db_feedback.feedback_source,
+                "file_name": db_feedback.file_name,
+                "feedback_count": db_feedback.feedback_count,
+                "thumbs_up_count": db_feedback.thumbs_up_count,
+                "thumbs_down_count": db_feedback.thumbs_down_count,
+                "docswise_avg_accuracy": db_feedback.docswise_avg_accuracy
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        if logger:
+            logger.error(DB_OPERATION_FAILED_LOG.format(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------
+# GET Endpoint — Aggregated Report
+# ---------------------------------------------------------------------
+@app.get("/aggregated_report", tags=["Aggregated Report"])
+def fetch_combined_report(
+    application_id: str = Header(...),
+    start_date: str = Query(..., description="Start date in format YYYY-MM-DD"),
+    end_date: str = Query(..., description="End date in format YYYY-MM-DD")
+):
+    """
+    Fetch combined high-level and field-level feedback reports.
+
+    Combines:
+      - High-level (document accuracy distribution)
+      - Field-level (field accuracy per field)
+    """
+    try:
+        if not application_id or not start_date or not end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="Headers 'application_id', 'start_date', and 'end_date' are required."
+            )
+
+        logger.info(
+            f"Received request for application_id={application_id}, start_date={start_date}, end_date={end_date}"
+        )
+
+        # Fetch high-level stats
+        high_level_result = get_document_percentage_stats(application_id, start_date, end_date)
+        if not high_level_result or (isinstance(high_level_result, dict) and "error" in high_level_result):
+            raise HTTPException(status_code=404, detail=f"No high-level records found for application_id={application_id}")
+
+        # Fetch detailed feedback report
+        feedback_result = feedback_report(application_id, start_date, end_date)
+        if not feedback_result or (isinstance(feedback_result, dict) and "error" in feedback_result):
+            raise HTTPException(status_code=404, detail=f"No feedback report found for application_id={application_id}")
+
+        # Combine both results
+        combined_reports = [
+            {"report_type": "high_level", **high_level_result[0]},
+            {"report_type": "field_level", **feedback_result[0]}
+        ]
+
+        return combined_reports
+
+    except HTTPException as http_err:
+        logger.warning(f"HTTP error in combined report: {http_err.detail}")
+        raise http_err
+    except Exception as e:
+        logger.error(f"Unexpected error in fetch_combined_report: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ---------------------------------------------------------------------
+# Run the Server
+# ---------------------------------------------------------------------
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
