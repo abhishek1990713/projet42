@@ -1,16 +1,3 @@
-Here’s a polished version of your message:
+Hi Nikith,
 
----
-
-**Subject:** Shared Original and Field-Level Report Excel Files
-
-Hi Neikh,
-
-I’ve sent two Excel files — one is the original file, and the other is the field-level report. Please check both and let me know if you need any changes.
-
-Thanks,
-Abhishek
-
----
-
-Would you like me to make it sound a bit more formal or keep it simple like this?
+That error indicates that the file_id column does not exist in the idp_feedback table. The reason is that we recently changed the column name from file_id to file_name. If you replace file_id with file_name, the error should be resolved
