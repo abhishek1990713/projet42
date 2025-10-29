@@ -1,101 +1,94 @@
-"""
-===========================================================
-📘 DATABASE CONNECTION MODULE
-===========================================================
-Description:
-------------
-This module initializes and manages the database connection
-for the feedback analytics service.
-
-It provides:
-- SQLAlchemy Engine
-- SessionLocal factory
-- Declarative Base
-- Dependency `get_db()` for FastAPI routes
-
-It uses credentials loaded via YAML and environment configurations.
-
-===========================================================
-"""
-
-from sqlalchemy.engine import make_url, create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-import yaml
-from feedback.environment import BaseEnvironment
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from models.models import Feedback
 from exceptions.setup_log import setup_logger
+from db.database import SessionLocal
 from constant.constants import *
+from datetime import datetime
 
-# ---------------------------------------------------------
-# 🔹 Logger Setup
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------
+# Logger setup
+# ---------------------------------------------------------------------
 try:
     logger = setup_logger()
 except Exception:
     logger = None
 
-# ---------------------------------------------------------
-# 🔹 Base Declarative Class
-# ---------------------------------------------------------
-Base = declarative_base()
 
-# ---------------------------------------------------------
-# 🔹 Engine & Session Setup
-# ---------------------------------------------------------
-try:
-    environment = BaseEnvironment()
-    pgvector_env = environment.vector_store_env
-
-    # Load credentials
-    credentials = yaml.safe_load(pgvector_env.credentials_path.read_text())
-
-    connect_args = {
-        "options": f"-c search_path=extensions,{pgvector_env.schema_name}",
-        "application_name": environment.application_name,
-        "sslmode": "verify-full",
-        "sslrootcert": pgvector_env.ssl_cert_file,
-    }
-
-    # Create SQLAlchemy Engine
-    engine = create_engine(
-        url=make_url(pgvector_env.url).set(
-            username=credentials["user"],
-            password=credentials["password"]
-        ),
-        pool_size=pgvector_env.pool_size,
-        connect_args=connect_args
-    )
-
-    # ✅ Define SessionLocal
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-    if logger:
-        logger.info("✅ Database engine and SessionLocal created successfully.")
-
-except Exception as e:
-    if logger:
-        logger.error(f"❌ Failed to initialize database engine: {e}", exc_info=True)
-    raise e
-
-
-# ---------------------------------------------------------
-# 🔹 Dependency: get_db()
-# ---------------------------------------------------------
-def get_db():
+# ---------------------------------------------------------------------
+# Function: get_feedback_responses_by_app
+# ---------------------------------------------------------------------
+def get_feedback_responses_by_app(application_id: str, start_date: str, end_date: str):
     """
-    Provides a new SQLAlchemy session for database operations.
-
-    Yields:
-        db (Session): Database session object
-
-    Ensures session closure after request completes.
+    Fetch all feedback_response JSON objects for a specific application_id
+    within a given start and end date range.
     """
-    db = SessionLocal()
+
+    db: Session = SessionLocal()
+
     try:
         if logger:
-            logger.info("✅ DB session opened successfully through CyberArk.")
-        yield db
+            logger.info(
+                f"Fetching full feedback_response data for application_id={application_id}, "
+                f"start_date={start_date}, end_date={end_date}"
+            )
+
+        # Convert string dates into full datetime range
+        start_datetime = datetime.strptime(f"{start_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+        end_datetime = datetime.strptime(f"{end_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+
+        if logger:
+            logger.info(f"Adjusted datetime range: start={start_datetime}, end={end_datetime}")
+
+        # Query all feedback responses for the given application ID and date range
+        feedback_records = (
+            db.query(
+                Feedback.feedback_id,
+                Feedback.application_id,
+                Feedback.document_id,
+                Feedback.file_name,
+                Feedback.feedback_response,
+                Feedback.created_on
+            )
+            .filter(
+                and_(
+                    Feedback.application_id == application_id,
+                    Feedback.created_on >= start_datetime,
+                    Feedback.created_on <= end_datetime
+                )
+            )
+            .all()
+        )
+
+        # Build response list
+        result = []
+        for record in feedback_records:
+            result.append({
+                "feedback_id": record.feedback_id,
+                "application_id": record.application_id,
+                "document_id": record.document_id,
+                "file_name": record.file_name,
+                "feedback_response": record.feedback_response,
+                "created_on": record.created_on.strftime("%Y-%m-%d %H:%M:%S") if record.created_on else None
+            })
+
+        if logger:
+            logger.info(FEEDBACK_RESPONSE_FETCH_SUCCESS.format(application_id, len(result)))
+
+        return {
+            "applicationId": application_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            "totalRecords": len(result),
+            "feedbackResponses": result
+        }
+
+    except Exception as e:
+        if logger:
+            logger.error(FEEDBACK_RESPONSE_FETCH_FAILURE.format(str(e)))
+        return {"error": str(e)}
+
     finally:
         db.close()
         if logger:
-            logger.info("🛑 DB session closed.")
-
+            logger.info(DB_SESSION_CLOSED)
