@@ -1,20 +1,18 @@
-Here’s a polished version of your email:
+Here’s a clear and professional version of your email:
 
 ---
 
-**Subject:** Leave Application for Marriage
+**Subject:** Not Available for Today’s IDP Daily Scrum Call
 
 Hi Arvind,
 
-I hope you’re doing well. I wanted to inform you that I’ll be getting married on **28th November 2025**. I would like to take leave on **26th, 27th, 28th November**, and **1st & 2nd December**.
+I wanted to inform you that I won’t be able to join today’s IDP daily scrum call due to food poisoning and a mild fever. I’m not feeling well and will be visiting the doctor’s clinic during that time.
 
-Additionally, since it includes the Citi mandatory leave, I’ll be taking a total of **5 days off**.
-
-Please let me know if you need any further details or formalities from my side.
+For today’s update, I’ve completed the **nested-level feedback for the field-level report** and am currently working on the **wrapper part for the extracted data**.
 
 Best regards,
-**[Your Name]**
+**Abhishek**
 
 ---
 
-Would you like me to make it sound a bit more **formal** or **friendly/informal** (since it’s a personal occasion)?
+Would you like me to make it slightly shorter or keep this detailed version?
