@@ -1,4 +1,4 @@
-"""
+9"""
 validation.py
 
 Handles 'VALIDATION' input source payloads for rule-based validation feedback.
@@ -111,3 +111,25 @@ def handle_validation_json(
                 f"[handle_validation_json()] [Document ID: {x_document_id}] - Error: {str(e)}"
             )
         raise HTTPException(status_code=500, detail=VALIDATION_ERROR_MSG)
+
+
+
+
+                                                                                      VALIDATION_INPUT_SOURCE = "VALIDATION"
+VALIDATION_SUCCESS_MSG = "Validation data processed successfully"
+VALIDATION_ERROR_MSG = "Error while processing validation data"
+UNKNOWN = "UNKNOWN"
+
+
+{
+  "document_id": "DOC1234",
+  "rule_id": "date_check_bm_fincen_ao_gssp",
+  "status": "thumbs_up",
+  "message": "Validation data processed successfully",
+  "field_feedback": {
+    "date_check_bm_fincen_ao_gssp": {
+      "comment": "### Rule: ...",
+      "status": "thumbs_up"
+    }
+  }
+}
