@@ -1,26 +1,83 @@
-9"""
-validation.py
+import json
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import logging
+from typing import Dict, Any
 
-Handles 'VALIDATION' input source payloads for rule-based validation feedback.
-Transforms the data into a standardized structure for storage and response.
-"""
-
-from fastapi import HTTPException, Request
-from sqlalchemy.orm import Session
-from logger_config import setup_logger
-from constant import (
-    UNKNOWN,
-    VALIDATION_SUCCESS_MSG,
-    VALIDATION_ERROR_MSG
+# --------------------------------------------------
+# Logger Configuration
+# --------------------------------------------------
+logging.basicConfig(
+    filename="app.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
-logger = setup_logger()
+# --------------------------------------------------
+# Constants
+# --------------------------------------------------
+PROCESS_INPUT_SOURCE = "PROCESS"
+VALIDATION_INPUT_SOURCE = "VALIDATION"
+UI_INPUT_SOURCE = "UI"
 
+# --------------------------------------------------
+# FastAPI App Initialization
+# --------------------------------------------------
+app = FastAPI(title="Validation API", description="Processes document validation and field feedback")
 
+# --------------------------------------------------
+# Request Model
+# --------------------------------------------------
+class ValidationRequest(BaseModel):
+    document_id: str
+    rule_id: str
+    status: str
+    message: str
+
+# --------------------------------------------------
+# Helper: Process Validation Data
+# --------------------------------------------------
+def process_validation(data: ValidationRequest) -> Dict[str, Any]:
+    """
+    Process validation request and generate structured field_feedback.
+    Includes comment, rule_id, and status.
+    """
+    try:
+        logger.info(f"Processing validation for document_id={data.document_id}, rule_id={data.rule_id}")
+
+        comment_text = f"### Rule: {data.rule_id} - Validation executed successfully."
+
+        field_feedback = {
+            data.rule_id: {
+                "comment": comment_text,
+                "status": data.status
+            }
+        }
+
+        response = {
+            "document_id": data.document_id,
+            "rule_id": data.rule_id,
+            "status": data.status,
+            "message": data.message,
+            "field_feedback": field_feedback
+        }
+
+        logger.info(f"Validation processed successfully for document_id={data.document_id}")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in process_validation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing validation data")
+
+# --------------------------------------------------
+# Helper: Handle Validation JSON Upload
+# --------------------------------------------------
 def handle_validation_json(
     request: Request,
     payload: dict,
-    db: Session,
+    db,
     x_correlation_id: str,
     x_application_id: str,
     x_created_by: str,
@@ -29,96 +86,109 @@ def handle_validation_json(
     x_authorization_coin: str,
     x_feedback_source: str,
     x_input_source: str
+) -> Dict[str, Any]:
+    """
+    Handle JSON request coming from VALIDATION input source.
+    """
+    try:
+        logger.info(f"[handle_validation_json()] Start validation for document {x_document_id}")
+
+        required_fields = ["document_id", "rule_id", "status", "message"]
+        for field in required_fields:
+            if field not in payload:
+                logger.warning(f"Missing field in validation payload: {field}")
+                raise HTTPException(status_code=400, detail=f"Missing field: {field}")
+
+        request_data = ValidationRequest(**payload)
+        result = process_validation(request_data)
+
+        logger.info(f"[handle_validation_json()] Completed validation for document {x_document_id}")
+        return result
+
+    except HTTPException as http_ex:
+        raise http_ex
+    except Exception as e:
+        logger.error(f"[handle_validation_json()] Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error during validation")
+
+# --------------------------------------------------
+# Main Upload Endpoint
+# --------------------------------------------------
+@app.post("/upload_json")
+async def upload_json(
+    request: Request,
+    file: UploadFile = File(...),
+    x_input_source: str = "UI",
+    x_correlation_id: str = "N/A",
+    x_application_id: str = "APP001",
+    x_created_by: str = "SYSTEM",
+    x_document_id: str = "DOC001",
+    x_file_id: str = "FILE001",
+    x_authorization_coin: str = "AUTH123",
+    x_feedback_source: str = "SYSTEM"
 ):
     """
-    Handles validation input data (from LLM or other automated validators).
-    Extracts validation info, converts it into structured feedback,
-    and saves it in the database.
+    Handles JSON upload and routes to appropriate handler 
+    based on input source (PROCESS / VALIDATION / UI).
     """
-
     try:
-        if logger:
-            logger.info(
-                f"[handle_validation_json()] [SOEID: {x_created_by}] "
-                f"[Correlation ID: {x_correlation_id}] [Document ID: {x_document_id}] - Processing VALIDATION input"
+        logger.info(f"[upload_json()] Received file {file.filename} from source {x_input_source}")
+
+        content = await file.read()
+        payload = json.loads(content.decode("utf-8"))
+
+        db = None  # Placeholder for DB session if needed later
+
+        if x_input_source == PROCESS_INPUT_SOURCE:
+            if logger:
+                logger.info(f"[upload_json()] [SOEID: {x_created_by}] [Correlation ID: {x_correlation_id}] [Document ID: {x_document_id}] - Processing request from PROCESS source")
+
+            # Placeholder for existing process handler
+            result = {"message": "Processed via PROCESS handler", "document_id": x_document_id}
+
+        elif x_input_source == VALIDATION_INPUT_SOURCE:
+            if logger:
+                logger.info(
+                    f"[upload_json()] [SOEID: {x_created_by}] "
+                    f"[Correlation ID: {x_correlation_id}] [Document ID: {x_document_id}] - Processing request from VALIDATION source"
+                )
+
+            result = handle_validation_json(
+                request,
+                payload,
+                db,
+                x_correlation_id,
+                x_application_id,
+                x_created_by,
+                x_document_id,
+                x_file_id,
+                x_authorization_coin,
+                x_feedback_source,
+                x_input_source
             )
 
-        # ✅ Extract validation data
-        validation_data = payload.get("validationData")
-        if not validation_data:
-            raise ValueError("Missing 'validationData' in payload")
+        else:
+            if logger:
+                logger.info(f"[upload_json()] Processing request from UI source for Document ID: {x_document_id}")
 
-        # Extract fields
-        mode = validation_data.get("mode", UNKNOWN)
-        raw_status = validation_data.get("status", UNKNOWN)
-        comment = validation_data.get("comment", "")
-        rule_id = validation_data.get("rule_id", UNKNOWN)
+            result = {"message": "Processed via UI handler", "document_id": x_document_id}
 
-        # Extract response metadata
-        response_metadata = validation_data.get("response_metadata", {})
-        perf_metrics = response_metadata.get("performance_metrics", {})
+        return JSONResponse(content=result, status_code=200)
 
-        memory_peak_usage_mb = perf_metrics.get("memory_peak_usage_mb", 0.0)
-        execution_time_seconds = perf_metrics.get("execution_time_seconds", 0.0)
-        validation_status = perf_metrics.get("validation_status", raw_status)
-
-        # ✅ Construct field_feedback (as dict instead of list)
-        field_feedback = {
-            rule_id: {
-                "comment": comment,
-                "status": validation_status
-            }
-        }
-
-        # ✅ Construct final record for DB
-        validation_record = {
-            "application_id": x_application_id,
-            "document_id": x_document_id,
-            "file_id": x_file_id,
-            "created_by": x_created_by,
-            "mode": mode,
-            "status": validation_status,
-            "rule_id": rule_id,
-            "field_feedback": field_feedback,
-            "memory_peak_usage_mb": memory_peak_usage_mb,
-            "execution_time_seconds": execution_time_seconds,
-            "feedback_source": x_feedback_source,
-            "input_source": x_input_source
-        }
-
-        # ✅ Example DB save (replace with ORM model if needed)
-        db.add(validation_record)
-        db.commit()
-
-        if logger:
-            logger.info(
-                f"[handle_validation_json()] [Document ID: {x_document_id}] - Validation data saved successfully."
-            )
-
-        # ✅ Final API response
-        return {
-            "document_id": x_document_id,
-            "rule_id": rule_id,
-            "status": validation_status,
-            "message": VALIDATION_SUCCESS_MSG,
-            "field_feedback": field_feedback
-        }
-
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON format in uploaded file")
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
-        db.rollback()
-        if logger:
-            logger.exception(
-                f"[handle_validation_json()] [Document ID: {x_document_id}] - Error: {str(e)}"
-            )
-        raise HTTPException(status_code=500, detail=VALIDATION_ERROR_MSG)
+        logger.error(f"[upload_json()] Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
-
-
-
-                                                                                      VALIDATION_INPUT_SOURCE = "VALIDATION"
-VALIDATION_SUCCESS_MSG = "Validation data processed successfully"
-VALIDATION_ERROR_MSG = "Error while processing validation data"
-UNKNOWN = "UNKNOWN"
+# --------------------------------------------------
+# Root Endpoint
+# --------------------------------------------------
+@app.get("/")
+def root():
+    return {"message": "Validation API is running"}
+"
 
 
 {
