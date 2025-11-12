@@ -1,4 +1,19 @@
-Hi Arvind, should I create a new Jira ticket for the validation task? During today’s scrum call, Nikth mentioned the validation part, and Jessica is working on it.
+Here’s a polished version of your email:
+
+---
+
+**Subject:** Sayyed’s Unavailability
+
+Hi Arvind,
+
+Sayyed is on leave today due to a high fever and throat infection. He has been hospitalized and will not be available.
+
+Regards,
+[Your Name]
+
+---
+
+Would you like me to make it a bit more formal or keep it simple like this?
 
 {
   "document_id": "DOC1234",
