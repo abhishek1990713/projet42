@@ -2,45 +2,50 @@ import json
 
 def update_dirty_status(feedback_section, existing_feedback):
     """
-    Recursively update the 'dirty' status in feedback_section
-    based on existing_feedback.
-    Handles nested dicts and lists safely.
+    Recursively compare feedback_section with existing_feedback
+    and set 'dirty' = True/False based on changes in 'value' fields.
+    Handles nested dicts and lists.
     """
     if isinstance(feedback_section, dict):
         for key, value in feedback_section.items():
             existing_value = existing_feedback.get(key) if isinstance(existing_feedback, dict) else None
 
+            # 1️⃣ If both are dicts → recurse
             if isinstance(value, dict) and isinstance(existing_value, dict):
-                # Recurse for nested dicts
                 update_dirty_status(value, existing_value)
 
+            # 2️⃣ If both are lists → iterate recursively
             elif isinstance(value, list) and isinstance(existing_value, list):
-                # Recurse for lists
                 for i in range(len(value)):
                     if i < len(existing_value):
                         update_dirty_status(value[i], existing_value[i])
                     else:
-                        # New element not in existing feedback
+                        # New item not in existing feedback
                         if isinstance(value[i], dict):
                             value[i]["dirty"] = True
 
-            else:
-                # Compare leaf nodes safely
-                if (
-                    isinstance(value, dict)
-                    and isinstance(existing_value, dict)
-                    and "value" in value
-                    and "value" in existing_value
-                ):
-                    if value["value"] == existing_value["value"]:
-                        value["dirty"] = False
-                    else:
-                        value["dirty"] = True
+            # 3️⃣ Leaf comparison when both have 'value'
+            elif (
+                isinstance(value, dict)
+                and "value" in value
+                and isinstance(existing_value, dict)
+                and "value" in existing_value
+            ):
+                if value["value"] == existing_value["value"]:
+                    value["dirty"] = False
                 else:
-                    # If not dicts (like strings, ints), cannot assign dirty
-                    pass
+                    value["dirty"] = True
+
+            # 4️⃣ If current value is dict but existing not found → mark dirty
+            elif isinstance(value, dict):
+                value["dirty"] = True
+
+            # 5️⃣ Ignore pure strings or numbers safely
+            else:
+                pass
 
     elif isinstance(feedback_section, list):
+        # Handle list at top-level
         for i in range(len(feedback_section)):
             if i < len(existing_feedback):
                 update_dirty_status(feedback_section[i], existing_feedback[i])
@@ -48,12 +53,10 @@ def update_dirty_status(feedback_section, existing_feedback):
                 if isinstance(feedback_section[i], dict):
                     feedback_section[i]["dirty"] = True
 
-    # Optional: return updated structure for debugging
     return feedback_section
 
 
 # ---------- MAIN LOGIC ----------
-
 existing_feedback = {}
 
 if existing_records:
@@ -64,9 +67,10 @@ if existing_records:
     elif isinstance(feedback_response, dict):
         existing_feedback = feedback_response.get("field_feedback", {})
 
-# Recursively update dirty status for nested data
+# Run the recursive update
 feedback_section = update_dirty_status(feedback_section, existing_feedback)
-print(feedback_section)
+
+print(json.dumps(feedback_section, indent=4, ensure_ascii=False))
 
 {
   "document_id": "DOC1234",
