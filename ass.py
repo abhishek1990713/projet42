@@ -1,24 +1,31 @@
-Here is a more professional and clear version of your email:
+import os
+import shutil
 
+# Input and output folders
+input_folder = "extract"
+output_folder = "output"
 
----
+# Create output folder if it doesn't exist
+os.makedirs(output_folder, exist_ok=True)
 
-Subject: Request for CMP Approval – Roles Not Defined Issue
+# Supported image extensions
+image_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp")
 
-Hi Arvind / Nisha,
+count = 0
 
-The Codify backend team is currently facing an issue where some endpoints are returning the error “roles not defined.”
+# Walk through all folders and subfolders
+for root, dirs, files in os.walk(input_folder):
+    for file in files:
+        if file.lower().endswith(image_extensions):
+            source_path = os.path.join(root, file)
 
-Michael has already raised a CMP request. Please find the CMP details below:
+            # Handle duplicate file names
+            destination_path = os.path.join(output_folder, file)
+            if os.path.exists(destination_path):
+                name, ext = os.path.splitext(file)
+                destination_path = os.path.join(output_folder, f"{name}_{count}{ext}")
 
-Sayeed CMP: shsiiwi11
+            shutil.copy2(source_path, destination_path)
+            count += 1
 
-Abhishek CMP: kshgev222b
-
-
-Kindly review and approve the CMP at the earliest so that we can run these endpoints without any issues.
-
-Please let me know if any additional information is required.
-
-Thanks & Regards,
-Abhishek
+print(f"Done! Copied {count} images to '{output_folder}' folder.")
