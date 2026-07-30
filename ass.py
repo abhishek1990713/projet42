@@ -1,31 +1,34 @@
 import os
 import shutil
 
-# Input and output folders
 input_folder = "extract"
 output_folder = "output"
 
-# Create output folder if it doesn't exist
 os.makedirs(output_folder, exist_ok=True)
 
-# Supported image extensions
 image_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp")
 
-count = 0
+for folder_name in os.listdir(input_folder):
+    folder_path = os.path.join(input_folder, folder_name)
 
-# Walk through all folders and subfolders
-for root, dirs, files in os.walk(input_folder):
-    for file in files:
-        if file.lower().endswith(image_extensions):
-            source_path = os.path.join(root, file)
+    if os.path.isdir(folder_path):
+        count = 0
 
-            # Handle duplicate file names
-            destination_path = os.path.join(output_folder, file)
-            if os.path.exists(destination_path):
-                name, ext = os.path.splitext(file)
-                destination_path = os.path.join(output_folder, f"{name}_{count}{ext}")
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                if file.lower().endswith(image_extensions):
+                    src = os.path.join(root, file)
 
-            shutil.copy2(source_path, destination_path)
-            count += 1
+                    # Rename file to avoid duplicate names
+                    new_name = f"{folder_name}_{count + 1}{os.path.splitext(file)[1]}"
+                    dest = os.path.join(output_folder, new_name)
 
-print(f"Done! Copied {count} images to '{output_folder}' folder.")
+                    shutil.copy2(src, dest)
+
+                    count += 1
+                    if count >= 5:
+                        break
+            if count >= 5:
+                break
+
+print("Done! Copied 5 images from each folder into the output folder.")
