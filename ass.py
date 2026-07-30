@@ -1,34 +1,61 @@
 import os
 import shutil
+import random
 
-input_folder = "extract"
-output_folder = "output"
+# Source dataset
+source_dir = "data"
 
-os.makedirs(output_folder, exist_ok=True)
+# Output dataset
+output_dir = "dataset"
 
-image_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp")
+# Train/Validation ratio
+train_ratio = 0.7
 
-for folder_name in os.listdir(input_folder):
-    folder_path = os.path.join(input_folder, folder_name)
+# Supported image formats
+image_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
 
-    if os.path.isdir(folder_path):
-        count = 0
+random.seed(42)
 
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                if file.lower().endswith(image_extensions):
-                    src = os.path.join(root, file)
+classes = ["handwritten", "digital"]
 
-                    # Rename file to avoid duplicate names
-                    new_name = f"{folder_name}_{count + 1}{os.path.splitext(file)[1]}"
-                    dest = os.path.join(output_folder, new_name)
+for cls in classes:
+    src_folder = os.path.join(source_dir, cls)
 
-                    shutil.copy2(src, dest)
+    images = [
+        f for f in os.listdir(src_folder)
+        if f.lower().endswith(image_extensions)
+    ]
 
-                    count += 1
-                    if count >= 5:
-                        break
-            if count >= 5:
-                break
+    random.shuffle(images)
 
-print("Done! Copied 5 images from each folder into the output folder.")
+    split_index = int(len(images) * train_ratio)
+
+    train_images = images[:split_index]
+    val_images = images[split_index:]
+
+    train_folder = os.path.join(output_dir, "train", cls)
+    val_folder = os.path.join(output_dir, "val", cls)
+
+    os.makedirs(train_folder, exist_ok=True)
+    os.makedirs(val_folder, exist_ok=True)
+
+    # Copy train images
+    for img in train_images:
+        shutil.copy2(
+            os.path.join(src_folder, img),
+            os.path.join(train_folder, img)
+        )
+
+    # Copy validation images
+    for img in val_images:
+        shutil.copy2(
+            os.path.join(src_folder, img),
+            os.path.join(val_folder, img)
+        )
+
+    print(f"{cls}")
+    print(f"  Total : {len(images)}")
+    print(f"  Train : {len(train_images)}")
+    print(f"  Val   : {len(val_images)}")
+
+print("\nDataset split completed successfully!")
